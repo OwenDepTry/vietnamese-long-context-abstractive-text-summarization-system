@@ -1,0 +1,131 @@
+# =============================================================================
+# Phase 1 — Data pipeline config.
+# Mọi đường dẫn và hyperparameter của phase 1 đều nằm ở đây; code không hardcode.
+# Đường dẫn tương đối được tính từ thư mục chạy lệnh (gốc repo).
+# =============================================================================
+
+seed: 42
+
+paths:
+  hf_cache_dir: data/raw/hf_cache      # cache của `datasets` (không commit)
+  processed_dir: data/processed        # Parquet đầu ra: <processed_dir>/<dataset>/<split>.parquet
+  stats_file: data/processed/stats.json
+
+hf:
+  token_env: HF_TOKEN                  # tên biến môi trường chứa token (không bao giờ ghi token vào file)
+
+tokenizer:
+  # Mọi phép đếm độ dài đều dùng tokenizer này (KHÔNG đếm theo từ).
+  name_or_path: VietAI/vit5-base
+  # ViT5 (T5) tự thêm </s> vào cuối input -> chừa 1 token cho special token.
+  reserve_special_tokens: 1
+  batch_size: 256                      # batch khi đếm token cho thống kê
+
+datasets:
+  vietnews:
+    enabled: true
+    # Đã xác minh: https://huggingface.co/datasets/nam194/vietnews (VNDS, Nguyen et al. 2019)
+    hf_id: nam194/vietnews
+    hf_config: null
+    revision: 39e2837bd57c09af5ca6f80a6483d40d904ad1ca   # commit đã kiểm tra 2026-10-05
+    # split đích -> split nguồn trên Hub
+    splits:
+      train: train
+      validation: validation
+      test: test
+    fields:
+      id: guid
+      document: article
+      summary: abstract
+    # Bản này đã tách từ bằng "_" ("ma_tuý") và tách dấu câu (" , ").
+    # true -> khôi phục văn bản tự nhiên cho ViT5 (xem preprocess.desegment).
+    desegment: true
+
+  wikilingua_vi:
+    enabled: true
+    # Đã xác minh: https://huggingface.co/datasets/esdurmus/wiki_lingua (config "vietnamese")
+    hf_id: esdurmus/wiki_lingua
+    hf_config: vietnamese
+    revision: ea3db3510cbd34d0f8dc612419ae40e4732f3b40   # commit main lúc smoke test 2026-10-05
+    source_split: train                # Hub chỉ có split train cho config này
+    # Tự chia train/validation/test theo hash(seed, url): mọi section của cùng
+    # một bài wikiHow luôn nằm chung một split -> không rò rỉ giữa các split.
+    split_key: url
+    split_ratios:
+      train: 0.90
+      validation: 0.05
+      test: 0.05
+    desegment: false
+
+loading:
+  # Khi có --limit: đọc streaming để không tải toàn bộ dataset (smoke test trên CPU).
+  streaming_when_limited: true
+  # WikiLingua + --limit: số bài tối đa quét để gom đủ mẫu cho cả 3 split.
+  max_scan_records_when_limited: 3000
+
+preprocess:
+  unicode_form: NFC
+  # Kiểu đặt dấu thanh cho các vần oa/oe/uy không có phụ âm cuối:
+  #   old -> hòa, khỏe, thúy  (phổ biến trên báo chí)
+  #   new -> hoà, khoẻ, thuý
+  #   null -> giữ nguyên
+  tone_style: old
+  strip_html: true
+  remove_control_chars: true
+  collapse_whitespace: true
+  keep_newlines: true                  # giữ xuống dòng (ranh giới đoạn) cho bước tách câu
+
+  # Tách từ CHỈ dành cho thành phần cần (vd. PhoBERT). Không bao giờ ghi đè
+  # cột document/summary dùng cho ViT5; nếu bật sẽ thêm cột *_ws riêng.
+  word_segmentation:
+    enabled: false
+    backend: underthesea               # underthesea | pyvi
+    columns: [document, summary]
+
+filter:
+  length_unit: words                   # đơn vị cho các ngưỡng lọc rẻ (không dùng cho giới hạn model)
+  min_document_words: 20
+  min_summary_words: 3
+  drop_summary_longer_than_document: true
+  dedup:
+    enabled: true
+    key: document                      # document | document_summary
+    cross_split: true                  # bỏ mẫu trùng giữa các split
+    # mẫu trùng được giữ ở split đứng trước, bỏ ở split đứng sau
+    split_priority: [test, validation, train]
+
+sentence_split:
+  backend: rule                        # rule | underthesea
+  min_chars: 2
+
+long_context:
+  strategy: extractive_filter          # extractive_filter | hierarchical
+  max_input_tokens: 1024               # tính cả special token của ViT5
+
+  extractive_filter:
+    ranker: bm25                       # bm25 | lexrank
+    # budget: nạp câu theo hạng tới khi đầy max_input_tokens (mặc định).
+    #   Lý do: chạy đầy đủ VietNews train cho thấy với ratio 0.30, document bị lọc
+    #   (trung vị 1170 token) chỉ còn ~515 token -> bỏ phí ~50% ngân sách.
+    # ratio: giữ top keep_ratio số câu (baseline để so sánh ở phase 3).
+    selection: budget                  # budget | ratio
+    keep_ratio: 0.30                   # chỉ dùng khi selection = ratio
+    min_sentences: 1                   # chỉ dùng khi selection = ratio
+    # true: document đã vừa max_input_tokens thì giữ nguyên, không lọc.
+    only_if_exceeds: true
+    bm25:
+      k1: 1.5
+      b: 0.75
+    lexrank:
+      threshold: 0.1
+      damping: 0.85
+      max_iter: 100
+      tol: 1.0e-6
+
+  hierarchical:
+    chunk_max_tokens: 512              # tính cả special token
+    overlap_tokens: 64                 # overlap theo câu, tối đa ~ số token này
+
+stats:
+  long_doc_threshold_tokens: 1024
+  percentile: 95

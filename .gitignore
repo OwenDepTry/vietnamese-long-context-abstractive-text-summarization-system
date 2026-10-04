@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+build/
+dist/
+
+# Dữ liệu và artefact (không commit)
+data/raw/
+data/processed/*
+!data/processed/.gitkeep
+outputs/
+checkpoints/
+*.parquet
+*.onnx
+*.bin
+*.safetensors
+
+# Bí mật
+.env
+*.token
+
+# Notebook / IDE
+.ipynb_checkpoints/
+.vscode/
+.idea/
+.DS_Store

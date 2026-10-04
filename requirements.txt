@@ -1,0 +1,20 @@
+# Phase 1 (data pipeline). Python >= 3.10. Pin đúng version để tái lập.
+# Dependency cho phase 2–5 (torch, accelerate, peft, rouge-score, bert-score,
+# evaluate, onnxruntime, optimum, fastapi, streamlit) sẽ được pin khi làm tới
+# phase đó, sau khi kiểm tra tương thích với runtime Colab/Kaggle (T4).
+
+# --- core ---
+datasets==4.8.5
+transformers==5.16.1        # chỉ dùng tokenizer VietAI/vit5-base (fast tokenizer từ tokenizer.json)
+pyarrow==21.0.0
+pandas==2.3.3
+numpy==2.2.6
+PyYAML==6.0.3
+tqdm==4.67.1
+
+# --- tách từ/tách câu (tùy chọn, bật qua config) ---
+underthesea==9.5.0
+pyvi==0.1.1
+
+# --- test ---
+pytest==9.0.3
