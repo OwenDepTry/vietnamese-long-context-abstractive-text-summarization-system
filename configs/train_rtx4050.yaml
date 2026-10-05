@@ -1,0 +1,27 @@
+# =============================================================================
+# Phase 2 — cấu hình cho máy local: NVIDIA RTX 4050 Laptop (6 GB VRAM, Ada).
+# Kế thừa toàn bộ configs/train.yaml, chỉ ghi đè các mục dưới đây.
+#   python -m vnsum.models.train --config configs/train_rtx4050.yaml
+# =============================================================================
+extends: train.yaml
+
+paths:
+  output_dir: outputs/vit5-lora-rtx4050
+  merged_dir: outputs/vit5-vnsum-merged-rtx4050
+
+# Ada hỗ trợ bf16: cùng dải giá trị với fp32 (không overflow như fp16 với T5),
+# chạy trên tensor core nên nhanh hơn fp32 nhiều. Trọng số LoRA vẫn giữ fp32.
+precision: bf16
+
+training:
+  # 6 GB VRAM: batch 2 x accumulation 16 = batch hiệu dụng 32 (giữ như config T4,
+  # nên learning_rate 5e-4 vẫn hợp lệ). Nếu OOM hoặc it/s tụt mạnh (Windows tràn
+  # VRAM sang RAM): batch 1 x accumulation 32.
+  per_device_train_batch_size: 2
+  per_device_eval_batch_size: 4
+  gradient_accumulation_steps: 16
+  # Windows: multiprocessing của DataLoader dễ lỗi/chậm -> 0.
+  dataloader_num_workers: 0
+
+eval:
+  batch_size: 8

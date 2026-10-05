@@ -7,7 +7,7 @@ viết code và chạy smoke test trên CPU.
 | Phase | Nội dung | Trạng thái |
 |---|---|---|
 | 1 | Data pipeline: tải, chuẩn hóa, lọc, xử lý văn bản dài | ✅ |
-| 2 | Training | ⏳ |
+| 2 | Training: ViT5 + LoRA (peft), Seq2SeqTrainer | ✅ code (chờ train T4) |
 | 3 | Evaluation | ⏳ |
 | 4 | Inference optimization | ⏳ |
 | 5 | API / UI / Docker | ⏳ |
@@ -17,6 +17,10 @@ viết code và chạy smoke test trên CPU.
 ```
 configs/data.yaml          # mọi đường dẫn + hyperparameter của phase 1
 scripts/prepare_data.py    # chạy toàn pipeline, ghi Parquet + thống kê
+scripts/merge_lora.py      # merge adapter vào ViT5, lưu model đầy đủ + kiểm tra
+configs/train.yaml         # hyperparameter phase 2 (đề xuất cho T4 16GB)
+configs/train_rtx4050.yaml # override cho RTX 4050 Laptop 6GB (bf16)
+notebooks/train_colab.ipynb  # Colab: chỉ gọi các script trên
 src/vnsum/
   config.py                # đọc + kiểm tra YAML
   data/
@@ -24,7 +28,14 @@ src/vnsum/
     preprocess.py          # NFC, dấu thanh, HTML, ký tự điều khiển, tách câu, lọc, dedup, tách từ (tùy chọn)
     long_context.py        # extractive_filter (BM25/LexRank) | hierarchical chunking
     tokenization.py        # đếm/cắt theo token ViT5
-  models/ eval/ inference/ api/   # phase 2–5
+  models/
+    train.py               # Seq2SeqTrainer + LoRA, cấu hình từ configs/train.yaml
+    train_config.py        # đọc/kiểm tra config, profile smoke, override CLI
+    data.py                # đọc Parquet phase 1 -> dataset đã tokenize
+    lora.py                # liệt kê module, chọn target_modules, đếm tham số
+    callbacks.py           # guard loss NaN/inf + ROUGE tập con val mỗi epoch
+    rouge.py               # ROUGE tokenizer tiếng Việt (giữ dấu)
+  eval/ inference/ api/    # phase 3–5
 tests/                     # pytest (offline, tokenizer giả) + test tokenizer ViT5 thật (tự skip nếu offline)
 notebooks/  ui/
 ```
@@ -65,6 +76,22 @@ make prepare                      # chạy đầy đủ
 
     Chạy đầy đủ VietNews train với `ratio` cho thấy document bị lọc (trung vị 1,170 token) chỉ còn khoảng 515 token, tức bỏ phí khoảng một nửa ngữ cảnh; vì vậy mặc định được chuyển sang `budget`.
   - `hierarchical`: gom câu thành chunk ≤ `chunk_max_tokens`, overlap khoảng `overlap_tokens` token tính theo câu. Câu nào dài hơn cả một chunk mới bị chia, theo dấu phẩy trước rồi mới tới token.
+
+## Phase 2 — Training
+
+```bash
+# Local (CPU) — cài torch CPU trước: pip install torch==2.14.1 --index-url https://download.pytorch.org/whl/cpu
+python -m vnsum.models.train --config configs/train.yaml --max_steps 5 --limit 32      # smoke test
+python scripts/merge_lora.py --config configs/train.yaml --adapter outputs/vit5-lora/final_adapter
+```
+
+Trên Colab dùng `notebooks/train_colab.ipynb` (T4): checkpoint lưu trên Google Drive, chạy lại cell train sẽ tự resume.
+
+- **LoRA:** r=16, alpha=32, gắn vào `q,k,v,o` của mọi attention (self-attn encoder, self + cross-attn decoder). Bật `lora.include_ffn` để thêm `wi, wo`.
+- **Precision:** `configs/train.yaml` (T4) mặc định fp32, vì T4 không có bf16 và T5 dễ NaN ở fp16. `--precision fp16` nhanh hơn; nếu loss NaN/inf, guard dừng ngay và báo lỗi. GPU hỗ trợ bf16 (Ampere/Ada) dùng `precision: bf16`, ví dụ `configs/train_rtx4050.yaml`; config này kế thừa `train.yaml` qua `extends`.
+- **Smoke test đã chạy thật (RTX 4050 Laptop):** LoRA trên `q,k,v,o` cho 3,538,944 tham số trainable / tổng 229,489,920 (1.542%). Sau khi merge, logits lệch so với PeftModel tối đa 2.29e-05.
+- **Input:** `data.input_strategy` = `extractive_filter` (cột `input_text` của phase 1) hoặc `truncate` (baseline). `hierarchical` dùng lúc suy luận, không dùng để train.
+- **ROUGE** trong lúc train tính trên 500 mẫu val ở cuối mỗi epoch, với tokenizer giữ dấu tiếng Việt (tokenizer mặc định của `rouge_score` xóa mọi chữ có dấu).
 
 ## Giấy phép dữ liệu
 

@@ -1,0 +1,114 @@
+# =============================================================================
+# Phase 2 — Fine-tune VietAI/vit5-base bằng LoRA (peft), Seq2SeqTrainer.
+# Mọi hyperparameter và đường dẫn nằm ở đây. CLI chỉ override đường dẫn
+# (Colab/Drive), --max_steps, --limit (smoke test), --precision, --resume_from_checkpoint.
+# =============================================================================
+
+seed: 42
+
+paths:
+  processed_dir: data/processed              # output của phase 1
+  output_dir: outputs/vit5-lora              # checkpoint + final_adapter; Colab: --output_dir trên Drive
+  merged_dir: outputs/vit5-vnsum-merged      # model đã merge cho phase 4 (scripts/merge_lora.py)
+
+hf:
+  token_env: HF_TOKEN
+
+model:
+  name_or_path: VietAI/vit5-base             # T5 gốc (relu FFN: wi/wo), 12+12 lớp, d_model 768
+
+data:
+  datasets: [vietnews, wikilingua_vi]        # gộp train của các dataset này
+  # extractive_filter: dùng cột input_text do phase 1 tạo (đã ≤ 1023 token + </s>).
+  # truncate: dùng document gốc, tokenizer cắt đuôi ở max_source_length (baseline).
+  # hierarchical: KHÔNG dùng để train — không có nhãn ở mức chunk; chiến lược này
+  #   áp dụng lúc suy luận (phase 3/4) với chính model train ở đây.
+  input_strategy: extractive_filter
+  source_prefix: ""                          # vd. "vietnews: " nếu muốn prefix kiểu ViT5
+  max_source_length: 1024
+  # p95 summary (phase 1, token ViT5): VietNews 61–62, WikiLingua-vi 109–125
+  # -> 128 phủ ≥ 95% cả hai dataset.
+  max_target_length: 128
+  # null = toàn bộ (~116.5k mẫu). Xem ước tính thời gian ở mục training.
+  max_train_samples: null
+  num_proc: 1                                # tiến trình khi tokenize
+
+eval:
+  # ROUGE trên tập con validation ở cuối mỗi epoch (250 x 2 dataset = 500 mẫu).
+  # Eval loss cũng tính trên đúng tập con này (không chạy toàn bộ 23k mẫu val).
+  rouge_samples_per_dataset: 250
+  batch_size: 16
+  generation:
+    num_beams: 1                             # greedy để nhanh; phase 3 mới đánh giá beam search
+    max_new_tokens: 128
+
+lora:
+  r: 16
+  alpha: 32                                  # scaling = alpha / r = 2
+  dropout: 0.05
+  bias: none
+  # Attention của T5: q, k, v, o (self-attn encoder; self + cross-attn decoder).
+  target_modules: [q, k, v, o]
+  # true -> thêm FFN (wi, wo với T5 gốc; wi_0, wi_1, wo với T5 v1.1), tự phát hiện.
+  include_ffn: false
+
+# fp32 (mặc định) | fp16. T4 KHÔNG có bf16.
+# T5 dễ overflow ở fp16 -> NaN. fp16 nhanh hơn nhiều trên T4 (tensor core) nhưng
+# có rủi ro; nếu bật, guard NaN sẽ dừng ngay và báo lỗi rõ ràng.
+precision: fp32
+
+# auto: tự resume từ checkpoint mới nhất trong output_dir (chạy lại cùng lệnh sau
+# khi Colab ngắt kết nối). none: luôn train từ đầu. Hoặc một đường dẫn checkpoint.
+resume: auto
+
+# Truyền thẳng vào Seq2SeqTrainingArguments (transformers 5.16.1).
+training:
+  num_train_epochs: 1
+  # --- Đề xuất cho T4 16GB, fp32 + LoRA + gradient checkpointing, input 1024 ---
+  # batch 4 x accumulation 8 = batch hiệu dụng 32. Bộ nhớ: model fp32 ~0.9GB,
+  # activation được checkpoint theo lớp nên batch 4 x 1024 token vừa T4.
+  # Nếu OOM: per_device_train_batch_size 2, gradient_accumulation_steps 16.
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 8
+  gradient_accumulation_steps: 8
+  # LoRA cần LR cao hơn full fine-tune (thường 1e-4 .. 1e-3); 5e-4 là mức an
+  # toàn cho T5-base với r=16. Thấy loss dao động mạnh -> giảm về 3e-4.
+  learning_rate: 5.0e-4
+  weight_decay: 0.01
+  warmup_steps: 0.03                         # float < 1 = tỷ lệ tổng số step (API transformers 5)
+  lr_scheduler_type: linear
+  max_grad_norm: 1.0
+  optim: adamw_torch
+  gradient_checkpointing: true
+  gradient_checkpointing_kwargs:
+    use_reentrant: false                     # bắt buộc để gradient chảy qua model frozen + LoRA
+  # Gom mẫu dài/ngắn vào cùng batch -> ít padding, nhanh hơn đáng kể.
+  train_sampling_strategy: group_by_length
+  # Ước tính (CHƯA ĐO): fp32 trên T4 ~0.1–0.2 s/mẫu -> 1 epoch toàn bộ dữ liệu
+  # ~4–6 giờ. Hãy đo it/s ở 50 step đầu rồi quyết định max_train_samples / số
+  # phiên Colab (resume giữa các phiên).
+  logging_steps: 25
+  logging_first_step: true
+  # Colab-safe: 200 optimizer step x 32 mẫu ≈ 6.4k mẫu (~15–25 phút ước tính).
+  save_strategy: steps
+  save_steps: 200
+  save_total_limit: 2
+  eval_strategy: epoch
+  dataloader_num_workers: 2
+  report_to: none
+
+# Áp dụng khi chạy với --limit (smoke test CPU). Ghi đè sâu lên các mục trên.
+smoke:
+  eval:
+    rouge_samples_per_dataset: 2
+    batch_size: 2
+    generation:
+      max_new_tokens: 32
+  training:
+    per_device_train_batch_size: 2
+    per_device_eval_batch_size: 2
+    gradient_accumulation_steps: 1
+    logging_steps: 1
+    save_steps: 5
+    dataloader_num_workers: 0                # Windows/CPU: tránh lỗi multiprocessing
+    train_sampling_strategy: random

@@ -1,1 +1,1 @@
-"""Mô hình (phase 2 — Training). Chưa triển khai ở phase 1."""
+"""Phase 2: fine-tune ViT5 + LoRA (train.py), cấu hình ở configs/train.yaml."""
