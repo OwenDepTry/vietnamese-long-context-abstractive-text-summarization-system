@@ -143,6 +143,19 @@ aux_metrics:
   repetition_ngram: 3          # tỷ lệ trigram lặp lại TRONG summary
   novel_ngrams: [1, 2]         # tỷ lệ n-gram của summary KHÔNG có trong document gốc
 
+stats:
+  bootstrap_samples: 1000      # số lần lấy lại mẫu cho CI
+  confidence: 0.95
+  seed: 42
+  reference_system: vit5_lora  # các hệ thống khác được so cặp với hệ thống này
+
+# Người chấm kiểm tra LLM judge: scripts/human_eval.py export | analyze (không gọi API).
+human_eval:
+  n_items: 50                  # chia đều cho các hệ thống dưới đây, lấy từ các mẫu judge đã chấm
+  seed: 42
+  systems: [vit5_lora, vit5_public, llm_zeroshot]   # bỏ lead3: trích nguyên văn, judge luôn chấm 5
+  dir: human_eval              # thư mục con trong results_dir
+
 qualitative:
   system: vit5_lora
   k: 5

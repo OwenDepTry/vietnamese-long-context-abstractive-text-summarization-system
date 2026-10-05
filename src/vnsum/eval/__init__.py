@@ -1,1 +1,1 @@
-"""Đánh giá (phase 3 — Evaluation). Chưa triển khai ở phase 1."""
+"""Phase 3: đánh giá (ROUGE tiếng Việt, BERTScore PhoBERT, LLM-as-Judge, chỉ số phụ, report)."""

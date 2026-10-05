@@ -1,6 +1,6 @@
 # Phân tích định tính — `vit5_lora`
 
-Chọn từ 194 mẫu đã chấm faithfulness. Document được rút gọn còn 700 ký tự đầu.
+Chọn từ 200 mẫu đã chấm faithfulness. Document được rút gọn còn 700 ký tự đầu.
 
 ## 5 mẫu tốt nhất (faithfulness cao nhất)
 

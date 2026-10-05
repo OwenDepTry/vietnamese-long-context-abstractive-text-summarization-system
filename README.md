@@ -22,6 +22,7 @@ configs/train.yaml         # hyperparameter phase 2 (đề xuất cho T4 16GB)
 configs/train_rtx4050.yaml # override cho RTX 4050 Laptop 6GB (bf16)
 configs/eval.yaml          # phase 3: hệ thống so sánh, generation config, judge, BERTScore
 scripts/evaluate.py        # phase 3: chạy đánh giá, ghi results/
+scripts/human_eval.py      # phase 3: người chấm đối chiếu LLM judge (export / analyze)
 notebooks/train_colab.ipynb  # Colab: chỉ gọi các script trên
 src/vnsum/
   config.py                # đọc + kiểm tra YAML
@@ -135,6 +136,16 @@ python scripts/evaluate.py --config configs/eval.yaml --model_path <...> --allow
 - **ROUGE** dùng tokenizer âm tiết giữ dấu; tokenizer mặc định của `rouge-score` xóa ký tự ngoài ASCII ("Hà Nội" và "Hè Nổi" bị coi là giống nhau, có test chứng minh).
 - **BERTScore** được cài đặt trực tiếp theo thuật toán gốc (greedy cosine, không idf), vì thư viện `bert-score` 0.3.13 không cắt input PhoBERT (tokenizer không khai báo `model_max_length`). Điểm là **raw**, vì không có baseline rescale cho PhoBERT.
 - **API trả phí** chỉ được gọi khi có `--allow_api`. Dự đoán và kết quả judge được ghi ngay ra cache trong `results/`, nên chạy lại không phải trả phí lần nữa.
+- **Khoảng tin cậy:** report có CI 95% bootstrap cho từng chỉ số và so sánh cặp (paired bootstrap) với ViT5 + LoRA trên cùng các mẫu; số liệu thô nằm ở `results/significance.csv`.
+- **Kiểm tra judge bằng người chấm** (không gọi API):
+
+  ```bash
+  python scripts/human_eval.py export --config configs/eval.yaml    # -> results/human_eval/items.md + annotation_sheet.csv
+  # đọc items.md, điền human_score (1–5) vào annotation_sheet.csv
+  python scripts/human_eval.py analyze --config configs/eval.yaml   # -> results/human_eval/agreement.md
+  ```
+
+  Bộ chấm gồm 50 mục lấy ngẫu nhiên (seed) từ các mẫu judge đã chấm, chia đều cho ViT5 + LoRA, ViT5 công khai và LLM zero-shot, ẩn tên hệ thống và điểm judge. `analyze` báo tỷ lệ trùng khớp, tỷ lệ lệch ≤ 1 điểm, Cohen's kappa trọng số bậc hai (kèm CI bootstrap), Spearman và ma trận nhầm lẫn.
 
 ## Giấy phép dữ liệu
 
