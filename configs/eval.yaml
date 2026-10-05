@@ -1,0 +1,149 @@
+# =============================================================================
+# Phase 3 — Evaluation. Mọi hệ thống chạy trên CÙNG tập đánh giá (lấy mẫu cố
+# định theo seed từ split test của phase 1) và cùng generation config.
+#   python scripts/evaluate.py --config configs/eval.yaml
+#   python scripts/evaluate.py --config configs/eval.yaml --limit 10 --skip_judge   # smoke test
+# Mọi lệnh gọi LLM API trả phí chỉ chạy khi có cờ --allow_api (nếu không: chỉ in ước tính số request).
+# =============================================================================
+
+seed: 42
+
+paths:
+  processed_dir: data/processed
+  results_dir: results
+  # Nếu systems.vit5_lora.model_path = null -> dùng paths.merged_dir của file này.
+  train_config: configs/train.yaml
+
+hf:
+  token_env: HF_TOKEN
+
+eval_set:
+  split: test
+  datasets: [vietnews, wikilingua_vi]
+  # Số mẫu lấy ngẫu nhiên (seed) mỗi dataset; null = toàn bộ split test
+  # (VietNews 22,497 + WikiLingua-vi 910). LLM zero-shot gọi API cho MỖI mẫu.
+  samples_per_dataset: 1000
+  # Nhóm "long" = document gốc > ngưỡng này (token ViT5, cột document_tokens của phase 1).
+  long_doc_threshold_tokens: 1024
+
+# Dùng chung cho mọi hệ thống sinh bằng model seq2seq (ViT5 LoRA, ViT5 công khai).
+# LLM zero-shot: max_new_tokens -> max_tokens của API; beam/no_repeat không áp dụng được qua API.
+generation:
+  num_beams: 4
+  max_new_tokens: 128          # = max_target_length lúc train (p95 summary ≤ 125 token)
+  no_repeat_ngram_size: 3
+  early_stopping: true
+  batch_size: 8
+  # auto: bf16 nếu GPU hỗ trợ (RTX 30xx/40xx), ngược lại fp32. KHÔNG dùng fp16: T5 dễ ra NaN.
+  dtype: auto
+
+systems:
+  lead3:
+    enabled: true
+    type: lead
+    num_sentences: 3
+    input_column: document       # 3 câu đầu của document GỐC (không qua extractive filter)
+
+  vit5_lora:
+    enabled: true
+    type: seq2seq
+    # Tên hiển thị trong report (khóa vit5_lora giữ nguyên để không mất cache dự đoán).
+    display_name: null           # vd. "VnLongSum"
+    description: "ViT5-base + LoRA r=16 (phase 2)"   # luôn hiện cạnh tên trong mục Thiết lập
+    model_path: null             # null -> paths.merged_dir của configs/train.yaml; hoặc --model_path
+    input_column: input_text     # cùng input như lúc train (extractive_filter[bm25, budget])
+    max_source_length: 1024
+    source_prefix: ""
+
+  # Tham chiếu công khai, đã xác minh trên Hub (2026-10-05):
+  # https://huggingface.co/VietAI/vit5-base-vietnews-summarization — fine-tune trên VietNews,
+  # model card dùng văn bản thường (không tách từ), không prefix.
+  vit5_public:
+    enabled: true
+    type: seq2seq
+    model_path: VietAI/vit5-base-vietnews-summarization
+    input_column: input_text     # cùng input với vit5_lora để so sánh công bằng
+    max_source_length: 1024
+    source_prefix: ""
+
+  llm_zeroshot:
+    enabled: true
+    type: llm
+    client: summarizer           # khóa trong mục llm bên dưới
+    input_column: document       # LLM ngữ cảnh dài: đưa document GỐC đầy đủ
+    max_input_chars: 30000
+
+llm:
+  # provider: anthropic | openai_compatible (Chat Completions; đặt base_url cho OpenAI/Groq/vLLM/...).
+  # Khóa API đọc từ biến môi trường api_key_env — không bao giờ ghi khóa vào file.
+  # extra_body (tùy chọn): tham số riêng của provider, gửi kèm request.
+  #
+  # Ví dụ Gemini free tier (OpenAI-compatible, đã xác minh base_url trên ai.google.dev 2026-10-05):
+  #   provider: openai_compatible
+  #   base_url: https://generativelanguage.googleapis.com/v1beta/openai/
+  #   model: gemini-3.8-flash
+  #   api_key_env: GEMINI_API_KEY
+  # Free tier: Google được dùng dữ liệu gửi lên để cải thiện sản phẩm; giới hạn RPM/RPD xem ở AI Studio.
+  summarizer:
+    # LLM zero-shot = OpenAI; judge = Claude -> hai họ model khác nhau (tránh judge thiên vị chính nó).
+    # ID model PHẢI khớp danh sách mà key của bạn thấy: chạy scripts/check_llm_api.py (miễn phí).
+    # gpt-6-luna: theo developers.openai.com (2026-10-05) là model reasoning, $0.10/$0.50 mỗi 1M token.
+    provider: openai_compatible
+    base_url: https://api.openai.com/v1
+    model: gpt-6-luna
+    api_key_env: OPENAI_API_KEY
+    max_tokens_field: max_completion_tokens   # model mới của OpenAI không nhận max_tokens
+    temperature: 0               # đặt null nếu model báo không hỗ trợ (check_llm_api.py --probe sẽ cho biết)
+    max_tokens: 512              # gồm cả token reasoning (nếu có)
+    extra_body:
+      reasoning_effort: none     # tóm tắt không cần suy luận; giữ output trong ngân sách token
+    concurrency: 4
+    timeout_seconds: 120
+    max_retries: 5
+    prompt: |
+      Hãy tóm tắt văn bản tiếng Việt dưới đây thành khoảng 2 câu (không quá 50 từ) bằng tiếng Việt.
+      Chỉ dùng thông tin có trong văn bản. Chỉ trả về đoạn tóm tắt, không thêm tiêu đề hay giải thích.
+
+      Văn bản:
+      {document}
+  judge:
+    # claude-sonnet-5-5 từ chối tham số temperature ("deprecated for this model", probe 2026-10-05)
+    # -> dùng claude-sonnet-4-6 để giữ temperature 0 như yêu cầu.
+    provider: anthropic
+    model: claude-sonnet-4-6
+    api_key_env: ANTHROPIC_API_KEY
+    base_url: null
+    temperature: 0
+    max_tokens: 400
+    concurrency: 4
+    timeout_seconds: 120
+    max_retries: 5
+judge:
+  enabled: true
+  # Cùng mẫu (seed) cho mọi hệ thống. Mẫu lồng nhau: tăng 200 -> 500 sau này chỉ chấm thêm 300 mẫu mới,
+  # 200 mẫu cũ lấy từ cache. Chi phí judge (Sonnet 4.6, $3/$15 mỗi 1M token) ~ $8 cho 200 mẫu x 4 hệ thống.
+  sample_size: 200
+  seed: 42
+  systems: [lead3, vit5_lora, vit5_public, llm_zeroshot]
+  max_document_chars: 30000    # document dài hơn bị cắt (ghi cờ truncated trong cache)
+  prompt_version: v1           # đổi khi sửa rubric/prompt -> cache cũ không bị dùng lại
+
+bertscore:
+  enabled: true
+  model: vinai/phobert-base
+  # PhoBERT-base có 12 lớp. BERTScore gốc chọn lớp 10 cho roberta-base (cùng kiến
+  # trúc), tối ưu trên dữ liệu tiếng Anh WMT16; chưa có lớp tối ưu cho tiếng Việt.
+  num_layers: 10
+  max_length: 256              # PhoBERT: max_position_embeddings=258 -> tối đa 256 subword (gồm <s>, </s>)
+  batch_size: 32
+  word_segmentation: underthesea   # underthesea | pyvi — PhoBERT cần input đã tách từ
+  # Không có baseline rescale cho PhoBERT -> điểm là RAW (không so được với số rescale của bài báo khác).
+
+aux_metrics:
+  repetition_ngram: 3          # tỷ lệ trigram lặp lại TRONG summary
+  novel_ngrams: [1, 2]         # tỷ lệ n-gram của summary KHÔNG có trong document gốc
+
+qualitative:
+  system: vit5_lora
+  k: 5
+  document_chars: 700
