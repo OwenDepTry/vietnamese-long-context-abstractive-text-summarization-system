@@ -7,7 +7,7 @@ viết code và chạy smoke test trên CPU.
 | Phase | Nội dung | Trạng thái |
 |---|---|---|
 | 1 | Data pipeline: tải, chuẩn hóa, lọc, xử lý văn bản dài | ✅ |
-| 2 | Training: ViT5 + LoRA (peft), Seq2SeqTrainer | ✅ code (chờ train T4) |
+| 2 | Training: ViT5 + LoRA (peft), Seq2SeqTrainer | ✅ |
 | 3 | Evaluation | ⏳ |
 | 4 | Inference optimization | ⏳ |
 | 5 | API / UI / Docker | ⏳ |
@@ -92,6 +92,23 @@ Trên Colab dùng `notebooks/train_colab.ipynb` (T4): checkpoint lưu trên Goog
 - **Smoke test đã chạy thật (RTX 4050 Laptop):** LoRA trên `q,k,v,o` cho 3,538,944 tham số trainable / tổng 229,489,920 (1.542%). Sau khi merge, logits lệch so với PeftModel tối đa 2.29e-05.
 - **Input:** `data.input_strategy` = `extractive_filter` (cột `input_text` của phase 1) hoặc `truncate` (baseline). `hierarchical` dùng lúc suy luận, không dùng để train.
 - **ROUGE** trong lúc train tính trên 500 mẫu val ở cuối mỗi epoch, với tokenizer giữ dấu tiếng Việt (tokenizer mặc định của `rouge_score` xóa mọi chữ có dấu).
+
+### Kết quả train (RTX 4050 Laptop 6GB, `configs/train_rtx4050.yaml`)
+
+| | Giá trị |
+|---|---|
+| Dữ liệu | 116,557 mẫu train (VietNews 99,133 + WikiLingua-vi 17,424), input `extractive_filter[bm25, budget]` |
+| Cấu hình | LoRA r=16 trên `q,k,v,o`; bf16; batch 2 × grad accum 16 (batch hiệu dụng 32); LR 5e-4; 1 epoch = 3,643 step |
+| Thời gian | 7 giờ 26 phút (~7.35 s/step), VRAM ~2.2 GB |
+| Train loss | 4.43 → ~1.85 (trung bình cả epoch 1.938) |
+| Eval loss (500 mẫu val) | 2.61 (trước khi train) → **1.899** |
+| ROUGE-1/2/L (500 mẫu val, greedy, tokenizer âm tiết giữ dấu) | 14.9/6.5/12.4 (trước khi train) → **29.88 / 15.72 / 25.35** |
+| Merge | max \|Δlogits\| giữa PeftModel và model đã merge = 1.14e-05 |
+
+ROUGE ở bảng trên là số đo sơ bộ trong lúc train: greedy decoding, không chặn lặp từ, chỉ 500 mẫu val. Phase 3 sẽ đánh giá đầy đủ trên tập test (beam search, `no_repeat_ngram_size`, tách riêng nhóm document > 1024 token).
+
+Ví dụ đầu ra của model đã merge (một bài trong tập test VietNews):
+> Sau khi lừa đảo vợ chồng ông Đinh Ngọc H., Huy đã lừa vợ chồng ông Th. 250 triệu đồng.
 
 ## Giấy phép dữ liệu
 
