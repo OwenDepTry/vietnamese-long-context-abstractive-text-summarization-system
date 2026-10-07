@@ -8,8 +8,8 @@ viết code và chạy smoke test trên CPU.
 |---|---|---|
 | 1 | Data pipeline: tải, chuẩn hóa, lọc, xử lý văn bản dài | ✅ |
 | 2 | Training: ViT5 + LoRA (peft), Seq2SeqTrainer | ✅ |
-| 3 | Evaluation: ROUGE (giữ dấu), BERTScore PhoBERT, LLM-as-Judge | ✅ code |
-| 4 | Inference optimization | ⏳ |
+| 3 | Evaluation: ROUGE (giữ dấu), BERTScore PhoBERT, LLM-as-Judge | ✅ |
+| 4 | Inference optimization: ONNX (KV cache), INT8, benchmark | 🚧 |
 | 5 | API / UI / Docker | ⏳ |
 
 ## Cấu trúc
@@ -23,6 +23,10 @@ configs/train_rtx4050.yaml # override cho RTX 4050 Laptop 6GB (bf16)
 configs/eval.yaml          # phase 3: hệ thống so sánh, generation config, judge, BERTScore
 scripts/evaluate.py        # phase 3: chạy đánh giá, ghi results/
 scripts/human_eval.py      # phase 3: người chấm đối chiếu LLM judge (export / analyze)
+configs/inference.yaml     # phase 4: backend, mức độ dài, văn bản dài, benchmark
+scripts/export_onnx.py     # phase 4: export ONNX (KV cache) + INT8 (+ FP16 tùy chọn), kiểm tra output
+scripts/benchmark.py       # phase 4: latency/throughput/RAM/VRAM/kích thước + ROUGE-L, ghi results/benchmark.md
+scripts/summarize.py       # phase 4: tóm tắt một văn bản bằng Summarizer
 notebooks/train_colab.ipynb  # Colab: chỉ gọi các script trên
 src/vnsum/
   config.py                # đọc + kiểm tra YAML
@@ -146,6 +150,26 @@ python scripts/evaluate.py --config configs/eval.yaml --model_path <...> --allow
   ```
 
   Bộ chấm gồm 50 mục lấy ngẫu nhiên (seed) từ các mẫu judge đã chấm, chia đều cho ViT5 + LoRA, ViT5 công khai và LLM zero-shot, ẩn tên hệ thống và điểm judge. `analyze` báo tỷ lệ trùng khớp, tỷ lệ lệch ≤ 1 điểm, Cohen's kappa trọng số bậc hai (kèm CI bootstrap), Spearman và ma trận nhầm lẫn.
+
+## Phase 4 — Inference optimization
+
+`optimum-onnx` (bản mới nhất 0.1.0) yêu cầu `transformers<4.58`, còn phase 2–3 dùng transformers 5, nên phase 4 chạy trong venv riêng:
+
+```powershell
+python -m venv .venv-onnx
+.venv-onnx\Scripts\activate
+pip install torch==2.9.1 --index-url https://download.pytorch.org/whl/cu128
+pip install -r requirements-inference.txt
+python -m pytest tests/test_inference.py
+
+python scripts/export_onnx.py --config configs/inference.yaml --model_path <model đã merge>
+python scripts/benchmark.py --config configs/inference.yaml --model_path <model đã merge> --limit 5 --device cpu   # smoke
+python scripts/benchmark.py --config configs/inference.yaml --model_path <model đã merge>                          # 100 tài liệu
+```
+
+- **Export:** `optimum` export encoder + decoder + decoder_with_past (KV cache); mỗi file được lượng tử hóa dynamic INT8 bằng `ORTQuantizer`. Bản FP16 cho GPU là tùy chọn (`--fp16`). File ONNX nằm cạnh model gốc (`<model>-onnx/{fp32,int8,fp16}`), không nằm trong repo.
+- **`Summarizer`** (`src/vnsum/inference/predictor.py`): một interface cho backend PyTorch và ONNX, ba mức độ dài `short/medium/long` → `max_new_tokens`, và văn bản dài được xử lý theo `long_document.strategy` (đưa thẳng / extractive filter như lúc train / hierarchical: tóm tắt từng chunk rồi tóm tắt bản ghép).
+- **Benchmark:** cùng 100 tài liệu test, cùng generation config với phase 3, 5 lần warmup, mỗi lượt chạy một process riêng. Đo p50/p95, throughput, RAM/VRAM đỉnh, kích thước trên đĩa; ROUGE-L của từng bản so với PyTorch, cảnh báo khi giảm quá 1 điểm. Ghi cấu hình phần cứng thật vào `results/benchmark.md`.
 
 ## Giấy phép dữ liệu
 

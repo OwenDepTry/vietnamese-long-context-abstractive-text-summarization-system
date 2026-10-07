@@ -1,1 +1,1 @@
-"""Suy luận (phase 4 — Inference Optimization). Chưa triển khai ở phase 1."""
+"""Suy luận (phase 4): Summarizer với backend PyTorch / ONNX Runtime, export ONNX + INT8, benchmark."""

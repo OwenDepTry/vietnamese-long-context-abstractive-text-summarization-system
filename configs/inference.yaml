@@ -1,0 +1,82 @@
+# =============================================================================
+# Phase 4 — Inference. Chạy trong venv riêng .venv-onnx (xem requirements-inference.txt):
+# optimum-onnx 0.1.0 yêu cầu transformers < 4.58, còn .venv chính dùng transformers 5.
+#
+#   python scripts/export_onnx.py --config configs/inference.yaml --model_path C:/vnsum-runs/vit5-vnsum-merged
+#   python scripts/benchmark.py   --config configs/inference.yaml --model_path C:/vnsum-runs/vit5-vnsum-merged --limit 5
+#   python scripts/summarize.py   --config configs/inference.yaml --model_path ... --file bai_bao.txt --length short
+# =============================================================================
+
+seed: 42
+
+model:
+  # Model PyTorch đã merge (phase 2). null -> paths.merged_dir của train_config; hoặc truyền --model_path.
+  pytorch_path: null
+  train_config: configs/train.yaml
+  # Thư mục chứa các bản ONNX (fp32/, int8/, fp16/). null -> "<pytorch_path>-onnx" (cạnh model gốc,
+  # tránh để file ONNX hàng trăm MB trong thư mục repo đang đồng bộ OneDrive).
+  onnx_root: null
+
+# Backend mặc định cho Summarizer (scripts/summarize.py, phase 5 API).
+backend: onnx                  # pytorch | onnx
+
+pytorch:
+  device: auto                 # auto | cpu | cuda
+  dtype: auto                  # auto (bf16 nếu GPU hỗ trợ, ngược lại fp32) | bf16 | fp32. KHÔNG fp16: T5 dễ ra NaN.
+
+onnx:
+  variant: int8                # fp32 | int8 | fp16 (fp16 chỉ chạy trên GPU)
+  device: auto                 # auto | cpu | cuda
+  intra_op_num_threads: null   # null = mặc định của ONNX Runtime (số lõi vật lý)
+  # false: tắt spin-wait của thread pool ORT. Trong vòng generate, ORT (3 session) và torch (beam search,
+  # sắp xếp KV cache) chạy xen kẽ từng bước; để spin-wait thì các thread pool giành CPU của nhau.
+  # Đo bằng scripts/profile_onnx.py trên i7-13620H (INT8, 2 tài liệu): tổng 3,829 ms -> 1,683 ms khi tắt.
+  allow_spinning: false
+  use_io_binding: null         # null = mặc định optimum (CPU: tắt, CUDA: bật)
+
+export:
+  task: text2text-generation-with-past   # có KV cache: encoder + decoder + decoder_with_past
+  opset: null                  # null = mặc định của optimum
+  quantization:
+    # Dynamic INT8 (trọng số INT8, activation lượng tử hóa lúc chạy) cho CPU.
+    # avx2: chạy trên mọi CPU x86 đời mới; avx512 / avx512_vnni nếu CPU hỗ trợ; arm64 cho ARM.
+    isa: avx2
+    per_channel: false
+
+# Cùng generation config với phase 3 (configs/eval.yaml), trừ max_new_tokens do mức độ dài quyết định.
+generation:
+  num_beams: 4
+  no_repeat_ngram_size: 3
+  early_stopping: true
+
+# Mức độ dài -> max_new_tokens (token ViT5). medium = 128, bằng max_target_length lúc train và phase 3.
+lengths:
+  short: 48
+  medium: 128
+  long: 256
+default_length: medium
+
+# Tiền xử lý: dùng lại mục preprocess / sentence_split / long_context.extractive_filter của phase 1.
+data_config: configs/data.yaml
+max_input_tokens: 1024         # tính cả special token, bằng max_source_length lúc train
+
+long_document:
+  # auto: vừa max_input_tokens -> đưa thẳng; dài hơn nhưng ≤ hierarchical_above_tokens -> extractive filter
+  #       (giống lúc train); dài hơn nữa -> hierarchical.
+  strategy: auto               # auto | extractive | hierarchical
+  hierarchical_above_tokens: 3072
+  chunk_max_tokens: 1024       # mỗi chunk tóm tắt riêng (tính cả special token)
+  overlap_tokens: 64
+  chunk_length: short          # mức độ dài khi tóm tắt từng chunk
+  max_rounds: 3                # gộp bản tóm tắt chunk vẫn quá dài -> chia và tóm tắt tiếp, tối đa số vòng này
+
+benchmark:
+  eval_config: configs/eval.yaml   # lấy tài liệu test giống hệt tập đánh giá phase 3
+  n_documents: 100
+  warmup: 5
+  length: medium
+  strategy: extractive         # cùng input như phase 3 (extractive_filter[bm25, budget] ≤ 1024 token)
+  latency_target_ms: 500
+  rouge_drop_warning: 1.0      # cảnh báo nếu ROUGE-L của ONNX INT8 thấp hơn PyTorch quá số điểm này
+  length_buckets: [256, 512]   # nhóm độ dài input (token) khi báo latency: ≤256, 257–512, >512
+  results_dir: results

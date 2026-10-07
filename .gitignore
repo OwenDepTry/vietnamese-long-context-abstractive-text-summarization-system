@@ -19,6 +19,9 @@ checkpoints/
 *.bin
 *.safetensors
 
+# Kết quả smoke test phase 3 (results/ đầy đủ thì commit được)
+results/smoke/
+
 # Bí mật
 .env
 *.token
@@ -28,3 +31,6 @@ checkpoints/
 .vscode/
 .idea/
 .DS_Store
+
+# venv riêng của phase 4 (optimum-onnx cần transformers<4.58)
+.venv-onnx/
