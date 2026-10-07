@@ -5,6 +5,7 @@
 #   python scripts/export_onnx.py --config configs/inference.yaml --model_path C:/vnsum-runs/vit5-vnsum-merged
 #   python scripts/benchmark.py   --config configs/inference.yaml --model_path C:/vnsum-runs/vit5-vnsum-merged --limit 5
 #   python scripts/summarize.py   --config configs/inference.yaml --model_path ... --file bai_bao.txt --length short
+#   uvicorn --factory vnsum.api.app:create_app --port 8000      # phase 5 API (đường dẫn model qua VNSUM_MODEL_PATH)
 # =============================================================================
 
 seed: 42
@@ -80,3 +81,12 @@ benchmark:
   rouge_drop_warning: 1.0      # cảnh báo nếu ROUGE-L của ONNX INT8 thấp hơn PyTorch quá số điểm này
   length_buckets: [256, 512]   # nhóm độ dài input (token) khi báo latency: ≤256, 257–512, >512
   results_dir: results
+
+# Phase 5 — API (src/vnsum/api). Đường dẫn model / backend lấy từ biến môi trường (xem .env.example).
+api:
+  max_input_chars: 50000       # text dài hơn -> 422
+  max_concurrency: 1           # số request inference chạy cùng lúc; CPU-bound nên 1 để không tranh luồng
+  # Backend cho /summarize/stream: same = dùng chung backend với /summarize (ONNX stream được vì
+  # ORTModelForSeq2SeqLM dùng generate() của transformers); pytorch = nạp thêm model PyTorch để stream.
+  # Stream luôn dùng greedy (num_beams=1): TextIteratorStreamer của transformers không hỗ trợ beam search.
+  stream_backend: same

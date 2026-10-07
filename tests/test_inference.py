@@ -249,7 +249,11 @@ def test_tiny_t5_export_quantize_and_generate(tmp_path, cfg):
     fp16 = tmp_path / "onnx" / "fp16"
     convert_fp16(fp32, fp16)
     assert sorted(p.name for p in fp16.glob("*.onnx")) == names
-    assert dir_size_mb(fp16, ("*.onnx",)) < dir_size_mb(fp32, ("*.onnx",))
+    # Không so kích thước: với model tí hon, các node Cast chèn quanh op giữ FP32 có thể làm file to hơn FP32.
+    import onnx
+
+    enc16 = onnx.load(str(fp16 / "encoder_model.onnx"))
+    assert any(t.data_type == onnx.TensorProto.FLOAT16 for t in enc16.graph.initializer)
 
     ids = torch.tensor([[5, 6, 7, 8, 9, 10, 1]])
     kw = {"max_new_tokens": 8, "num_beams": 2, "do_sample": False}

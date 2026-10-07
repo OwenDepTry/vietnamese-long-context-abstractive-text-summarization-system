@@ -1,1 +1,1 @@
-"""API (phase 5 — API/UI/Docker). Chưa triển khai ở phase 1."""
+"""API (phase 5): FastAPI cho Summarizer — xem vnsum.api.app.create_app."""

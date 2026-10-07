@@ -34,3 +34,6 @@ results/smoke/
 
 # venv riêng của phase 4 (optimum-onnx cần transformers<4.58)
 .venv-onnx/
+
+# thư mục model mặc định của docker-compose khi chưa đặt MODEL_DIR
+models/

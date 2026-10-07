@@ -1,0 +1,3 @@
+# Phase 5 — UI Streamlit. Không cần torch / model: UI chỉ gọi API qua HTTP.
+streamlit==1.65.0
+httpx==0.28.1

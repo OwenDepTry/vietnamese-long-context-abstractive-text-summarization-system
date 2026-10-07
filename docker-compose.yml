@@ -1,0 +1,35 @@
+# docker compose build && docker compose up
+# Trước đó: copy .env.example thành .env và đặt MODEL_DIR = thư mục chứa model (KHÔNG copy model vào image).
+services:
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    image: vnsum-api:local
+    environment:
+      VNSUM_MODEL_PATH: /models/${MODEL_NAME:-vit5-vnsum-merged}
+      VNSUM_BACKEND: ${VNSUM_BACKEND:-onnx}
+      VNSUM_ONNX_VARIANT: ${VNSUM_ONNX_VARIANT:-int8}
+      VNSUM_DEVICE: cpu
+      VNSUM_STREAM_BACKEND: ${VNSUM_STREAM_BACKEND:-same}
+      VNSUM_LOG_LEVEL: ${VNSUM_LOG_LEVEL:-INFO}
+    volumes:
+      # <MODEL_DIR>/vit5-vnsum-merged (PyTorch) và <MODEL_DIR>/vit5-vnsum-merged-onnx/{fp32,int8} (phase 4)
+      - ${MODEL_DIR:-./models}:/models:ro
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  ui:
+    build:
+      context: .
+      dockerfile: docker/ui.Dockerfile
+    image: vnsum-ui:local
+    environment:
+      API_URL: http://api:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
