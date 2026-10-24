@@ -513,3 +513,48 @@ def test_recover_judge_output_from_unescaped_quotes_and_truncation():
     fixed = resolve_cached(row)
     assert fixed["score"] == 4 and fixed["error"] is None and fixed["original_error"] == "JSON lỗi"
     assert row["score"] is None                               # không sửa dòng cache gốc
+
+
+# --------------------------------------------------------------------------- tóm tắt phân cấp (bước mở rộng 1)
+def test_hierarchical_inputs_batches_chunks_and_fits_budget(counter, make_doc):
+    from vnsum.eval.systems import hierarchical_inputs
+
+    long_doc, _ = make_doc(30, 12)          # 360 token
+    short_doc, _ = make_doc(3, 12)          # 36 token
+    calls = []
+
+    def fake_generate(texts, n):
+        calls.append((len(texts), n))
+        return [f"tóm tắt {k} " + "x " * 5 for k in range(len(texts))]   # mỗi chunk -> ~7 token
+
+    extracted = []
+    out, rounds = hierarchical_inputs(
+        [long_doc, short_doc], fake_generate, counter, max_input_tokens=64, chunk_max_tokens=100,
+        overlap_tokens=12, chunk_max_new_tokens=48, max_rounds=3,
+        extract=lambda t: extracted.append(t) or t, splitter=lambda t: [s + "." for s in t.split(". ") if s])
+    assert out[1] == short_doc and rounds[1] == 0                        # văn bản vừa ngân sách: giữ nguyên
+    assert rounds[0] >= 1 and counter.count(out[0]) <= counter.budget(64)
+    assert calls[0][1] == 48 and calls[0][0] >= 4                        # mọi chunk của vòng 1 trong MỘT lần gọi
+    assert not extracted
+
+
+def test_hierarchical_inputs_falls_back_to_extract_after_max_rounds(counter, make_doc):
+    from vnsum.eval.systems import hierarchical_inputs
+
+    doc, _ = make_doc(30, 12)
+    out, rounds = hierarchical_inputs(
+        [doc], lambda texts, n: [t for t in texts], counter, max_input_tokens=64, chunk_max_tokens=100,
+        overlap_tokens=0, chunk_max_new_tokens=48, max_rounds=1, extract=lambda t: "LỌC",
+        splitter=lambda t: [s + "." for s in t.split(". ") if s])
+    assert out == ["LỌC"] and rounds == [1]
+
+
+def test_config_validates_hierarchical_system():
+    cfg = load_eval_config(CFG_PATH)
+    assert cfg["systems"]["vit5_lora_hier"]["enabled"] is False          # không đổi kết quả chính
+    assert "vit5_lora_hier" in cfg["judge"]["systems"]
+    from vnsum.eval.config import EvalConfigError, validate_eval_config
+
+    del cfg["systems"]["vit5_lora_hier"]["hierarchical"]["max_rounds"]
+    with pytest.raises(EvalConfigError):
+        validate_eval_config(cfg)

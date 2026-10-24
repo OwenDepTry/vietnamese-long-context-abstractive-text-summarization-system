@@ -32,6 +32,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--processed_dir", default=None, help="override paths.processed_dir")
     p.add_argument("--precision", choices=["fp32", "fp16", "bf16"], default=None, help="override precision")
     p.add_argument("--resume_from_checkpoint", default=None, help="auto | none | đường dẫn checkpoint")
+    p.add_argument("--init_adapter", default=None,
+                   help="train tiếp từ adapter LoRA có sẵn (vd. .../final_adapter); override model.init_adapter")
     p.add_argument("--log-level", default="INFO")
     return p.parse_args(argv)
 
@@ -89,6 +91,7 @@ def main(argv: list[str] | None = None) -> int:
         processed_dir=args.processed_dir,
         precision=args.precision,
         resume=args.resume_from_checkpoint,
+        init_adapter=args.init_adapter,
     )
     if cfg["limit"]:
         logger.info("Smoke mode: --limit %d, đã áp dụng profile `smoke` từ config", cfg["limit"])
@@ -142,17 +145,27 @@ def main(argv: list[str] | None = None) -> int:
     print(f"LoRA target_modules: {targets}")
     if cfg["training"].get("gradient_checkpointing"):
         model.enable_input_require_grads()
-    model = get_peft_model(
-        model,
-        LoraConfig(
-            task_type=TaskType.SEQ_2_SEQ_LM,
-            r=int(lora_cfg["r"]),
-            lora_alpha=int(lora_cfg["alpha"]),
-            lora_dropout=float(lora_cfg["dropout"]),
-            bias=lora_cfg.get("bias", "none"),
-            target_modules=targets,
-        ),
-    )
+    init_adapter = cfg["model"].get("init_adapter")
+    if init_adapter:
+        # Train tiếp adapter cũ (bước distillation): giữ nguyên r / alpha / target_modules của adapter đó.
+        from peft import PeftModel
+
+        if not (Path(init_adapter) / "adapter_config.json").exists():
+            raise SystemExit(f"Không thấy adapter_config.json trong {init_adapter}")
+        model = PeftModel.from_pretrained(model, init_adapter, is_trainable=True)
+        print(f"Train tiếp từ adapter: {init_adapter} (bỏ qua mục lora của config)")
+    else:
+        model = get_peft_model(
+            model,
+            LoraConfig(
+                task_type=TaskType.SEQ_2_SEQ_LM,
+                r=int(lora_cfg["r"]),
+                lora_alpha=int(lora_cfg["alpha"]),
+                lora_dropout=float(lora_cfg["dropout"]),
+                bias=lora_cfg.get("bias", "none"),
+                target_modules=targets,
+            ),
+        )
     trainable, total = count_parameters(model)
     print(f"Tham số trainable: {trainable:,} / tổng {total:,} ({100 * trainable / total:.3f}%)")
 
@@ -211,6 +224,8 @@ def main(argv: list[str] | None = None) -> int:
         "model": model_name,
         "precision": precision,
         "input_strategy": cfg["data"]["input_strategy"],
+        "init_adapter": cfg["model"].get("init_adapter"),
+        "distill": cfg["data"].get("distill"),
         "target_modules": targets,
         "trainable_params": trainable,
         "total_params": total,

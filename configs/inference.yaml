@@ -50,11 +50,23 @@ generation:
   no_repeat_ngram_size: 3
   early_stopping: true
 
-# Mức độ dài -> max_new_tokens (token ViT5). medium = 128, bằng max_target_length lúc train và phase 3.
+# Mức độ dài. Số nguyên = max_new_tokens (giới hạn trên), hoặc dict:
+#   max_new_tokens  giới hạn trên (model vẫn có thể dừng sớm hơn)
+#   min_new_tokens  chặn token kết thúc trước khi đủ số token này
+#   length_penalty  beam search: > 1 ưu tiên câu dài, < 1 ưu tiên câu ngắn (bỏ qua khi greedy)
+# medium giữ nguyên như phase 3 (beam 4, max 128) để benchmark / eval so sánh được.
+# Lý do thêm min/length_penalty: chạy thử UI với một văn bản quy định, cả ba mức ra cùng bản 17 token
+# vì model tự dừng trước mọi giới hạn trên.
 lengths:
-  short: 48
-  medium: 128
-  long: 256
+  short:
+    max_new_tokens: 48
+    length_penalty: 0.6
+  medium:
+    max_new_tokens: 128
+  long:
+    max_new_tokens: 256
+    min_new_tokens: 64
+    length_penalty: 2.0
 default_length: medium
 
 # Tiền xử lý: dùng lại mục preprocess / sentence_split / long_context.extractive_filter của phase 1.

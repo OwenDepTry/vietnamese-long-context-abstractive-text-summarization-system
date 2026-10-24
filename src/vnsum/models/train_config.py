@@ -49,6 +49,9 @@ def validate_train_config(cfg: dict[str, Any]) -> None:
             raise TrainConfigError(f"data.{key} phải > 0")
     if not cfg["data"].get("datasets"):
         raise TrainConfigError("data.datasets rỗng")
+    d = cfg["data"].get("distill")
+    if d is not None and (not isinstance(d, dict) or not d.get("path") or int(d.get("original_samples", 0)) < 0):
+        raise TrainConfigError("data.distill cần path (parquet của scripts/distill_data.py) và original_samples ≥ 0")
     lora = cfg["lora"]
     if int(lora["r"]) <= 0 or not lora.get("target_modules"):
         raise TrainConfigError("lora.r phải > 0 và lora.target_modules không được rỗng")
@@ -89,6 +92,7 @@ def apply_cli_overrides(
     processed_dir: str | None = None,
     precision: str | None = None,
     resume: str | None = None,
+    init_adapter: str | None = None,
 ) -> dict[str, Any]:
     """Áp dụng override từ CLI. ``--limit`` bật profile ``smoke`` trong config."""
     out = copy.deepcopy(cfg)
@@ -111,5 +115,7 @@ def apply_cli_overrides(
         out["precision"] = precision
     if resume:
         out["resume"] = resume
+    if init_adapter:
+        out["model"]["init_adapter"] = init_adapter
     validate_train_config(out)
     return out

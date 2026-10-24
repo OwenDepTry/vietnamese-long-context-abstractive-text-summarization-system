@@ -50,8 +50,34 @@ def load_train_frame(cfg: dict[str, Any]) -> pd.DataFrame:
     cap = data.get("max_train_samples")
     if cap and not limit:
         df = df.iloc[: int(cap)].reset_index(drop=True)
+    if data.get("distill"):
+        df = mix_distill(df, data["distill"], seed, limit)
     logger.info("Train: %d mẫu (%s)", len(df), df["dataset"].value_counts().to_dict())
     return df
+
+
+def mix_distill(original: pd.DataFrame, dcfg: dict[str, Any], seed: int, limit: int | None = None) -> pd.DataFrame:
+    """Trộn dữ liệu distillation (bản tóm tắt của LLM) với một phần dữ liệu gốc.
+
+    Bài đã có bản LLM bị loại khỏi phần gốc (một input không có hai nhãn mâu thuẫn). Phần gốc giữ lại
+    ``original_samples`` mẫu để model không quên phân phối cũ. Cột ``origin`` = distill | original.
+    """
+    path = Path(dcfg["path"])
+    if not path.exists():
+        raise FileNotFoundError(f"Không thấy {path}. Chạy scripts/distill_data.py trước.")
+    dist = pd.read_parquet(path, columns=["id", "dataset", "input_text", "summary"]).rename(columns={"input_text": "source"})
+    dist["id"] = dist["id"].astype(str)
+    if limit:
+        dist = dist.head(max(1, limit // 2))
+    orig = original[~original["id"].astype(str).isin(set(dist["id"]))]
+    n_orig = int(dcfg.get("original_samples", 0))
+    if limit:
+        n_orig = min(n_orig, max(1, limit // 2))
+    orig = orig.sample(n=min(n_orig, len(orig)), random_state=seed) if n_orig else orig.iloc[0:0]
+    out = pd.concat([dist.assign(origin="distill"), orig.assign(origin="original")], ignore_index=True)
+    out = out.sample(frac=1.0, random_state=seed).reset_index(drop=True)
+    logger.info("Distill: %d mẫu LLM + %d mẫu gốc (%s)", len(dist), len(orig), path)
+    return out
 
 
 def load_eval_frame(cfg: dict[str, Any]) -> pd.DataFrame:

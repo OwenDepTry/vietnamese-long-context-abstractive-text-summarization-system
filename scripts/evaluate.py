@@ -49,6 +49,11 @@ def parse_args(argv=None):
                    help="chấm lại các mục judge bị lỗi parse trong cache (vẫn cần --allow_api để thực sự gửi)")
     p.add_argument("--systems", default=None, help="danh sách hệ thống, phân cách bằng dấu phẩy (mặc định: mọi hệ thống enabled)")
     p.add_argument("--model_path", default=None, help="đường dẫn model ViT5 LoRA đã merge (override systems.vit5_lora.model_path)")
+    p.add_argument("--subset", choices=["all", "long"], default="all",
+                   help="long: chỉ các mẫu is_long (mặc định ghi vào <results_dir>/long, không đụng kết quả chính)")
+    p.add_argument("--judge_sample_size", type=int, default=None, help="override judge.sample_size (vd. 225 = cả nhóm dài)")
+    p.add_argument("--system_model", action="append", default=[], metavar="TÊN=ĐƯỜNG_DẪN",
+                   help="đường dẫn model cho một hệ thống seq2seq có model_path null (vd. vit5_distill=C:/vnsum-runs/...); lặp lại được")
     p.add_argument("--results_dir", default=None)
     p.add_argument("--processed_dir", default=None)
     p.add_argument("--log-level", default="INFO")
@@ -77,25 +82,43 @@ def main(argv=None) -> int:
     if args.processed_dir:
         cfg["paths"]["processed_dir"] = args.processed_dir
     results_dir = Path(args.results_dir or cfg["paths"]["results_dir"])
+    if args.subset == "long" and not args.results_dir:
+        results_dir = results_dir / "long"
     if args.limit:
         results_dir = results_dir / "smoke"
+    if args.judge_sample_size:
+        cfg["judge"]["sample_size"] = int(args.judge_sample_size)
     results_dir.mkdir(parents=True, exist_ok=True)
 
     eval_df = load_eval_set(cfg, limit=args.limit)
     eval_df["id"] = eval_df["id"].astype(str)
+    if args.subset == "long":
+        eval_df = eval_df[eval_df["is_long"]].reset_index(drop=True)
+        print(f"Chỉ đánh giá nhóm dài: {len(eval_df)} mẫu (> {cfg['eval_set']['long_doc_threshold_tokens']} token)")
+        if eval_df.empty:
+            return 1
     gate = ApiGate(allowed=args.allow_api)
 
     wanted = [s.strip() for s in args.systems.split(",")] if args.systems else None
+    per_system = dict(x.split("=", 1) for x in args.system_model)
+    unknown = [k for k in per_system if k not in cfg["systems"]]
+    if unknown:
+        raise SystemExit(f"--system_model: không có hệ thống {unknown} trong config")
     predictions: dict[str, dict[str, str]] = {}
     system_info: dict[str, str] = {}
     skipped: dict[str, str] = {}
     for name, sys_cfg in cfg["systems"].items():
-        if not sys_cfg.get("enabled", True) or (wanted and name not in wanted):
+        # --systems chọn đích danh (kể cả hệ thống enabled: false); không có --systems -> mọi hệ thống enabled.
+        if (wanted and name not in wanted) or (not wanted and not sys_cfg.get("enabled", True)):
             continue
         model_path = None
         if sys_cfg["type"] == "seq2seq":
-            model_path = resolve_lora_path(cfg, sys_cfg, args.model_path) if name == "vit5_lora" else sys_cfg["model_path"]
-            if name == "vit5_lora" and not os.path.isdir(model_path):
+            uses_lora = not sys_cfg.get("model_path")   # model_path null -> model đã merge của phase 2
+            if name in per_system:
+                model_path = per_system[name]
+            else:
+                model_path = resolve_lora_path(cfg, sys_cfg, args.model_path) if uses_lora else sys_cfg["model_path"]
+            if uses_lora and not os.path.isdir(model_path):
                 skipped[name] = f"không thấy model đã merge ở {model_path}; truyền --model_path"
                 print(f"[{name}] BỎ QUA — {skipped[name]}")
                 continue

@@ -1,0 +1,27 @@
+# =============================================================================
+# Bước mở rộng B — train tiếp adapter LoRA của phase 2 trên dữ liệu distillation (RTX 4050).
+#   python -m vnsum.models.train --config configs/train_distill.yaml \
+#       --init_adapter C:\vnsum-runs\vit5-lora-rtx4050\final_adapter --output_dir C:\vnsum-runs\vit5-lora-distill
+# Kế thừa train_rtx4050.yaml (bf16, batch 2 x 16), chỉ ghi đè các mục dưới đây.
+# =============================================================================
+extends: train_rtx4050.yaml
+
+paths:
+  output_dir: outputs/vit5-lora-distill
+  merged_dir: outputs/vit5-vnsum-distill-merged
+
+model:
+  init_adapter: null             # đặt bằng --init_adapter (adapter phase 2); null = LoRA mới từ ViT5 gốc
+
+data:
+  distill:
+    path: data/distill/train.parquet
+    # Mẫu gốc trộn thêm để model không quên phân phối cũ (bài đã có bản LLM bị loại khỏi phần này).
+    original_samples: 5000
+
+training:
+  # ~5k mẫu LLM + 5k mẫu gốc = ~10k mẫu -> ~310 optimizer step/epoch (batch hiệu dụng 32).
+  # Theo tốc độ đo ở phase 2 (~7.35 s/step) ≈ 40 phút/epoch — ước tính, chưa đo cho cấu hình này.
+  num_train_epochs: 2
+  learning_rate: 2.0e-4          # thấp hơn phase 2 (5e-4) vì train tiếp từ adapter đã hội tụ
+  save_steps: 100

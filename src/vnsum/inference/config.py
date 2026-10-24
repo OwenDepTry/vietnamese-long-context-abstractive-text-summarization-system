@@ -35,10 +35,14 @@ def validate_inference_config(cfg: dict[str, Any]) -> None:
                 raise InferenceConfigError(f"{sec}.{key} phải là auto | cpu | cuda")
     lengths = cfg["lengths"]
     if not isinstance(lengths, dict) or not lengths:
-        raise InferenceConfigError("lengths phải là dict {tên: max_new_tokens}")
-    for name, value in lengths.items():
-        if not isinstance(value, int) or value <= 0:
-            raise InferenceConfigError(f"lengths.{name} phải là số nguyên dương (max_new_tokens)")
+        raise InferenceConfigError("lengths phải là dict {tên: max_new_tokens | {max_new_tokens, ...}}")
+    for name in lengths:
+        try:
+            preset = length_preset(cfg, name)
+        except (TypeError, ValueError) as err:
+            raise InferenceConfigError(f"lengths.{name}: {err}") from None
+        if preset["min_new_tokens"] > preset["max_new_tokens"]:
+            raise InferenceConfigError(f"lengths.{name}: min_new_tokens lớn hơn max_new_tokens")
     if cfg["default_length"] not in lengths:
         raise InferenceConfigError("default_length phải là một khóa trong lengths")
     ld = cfg["long_document"]
@@ -86,15 +90,48 @@ def onnx_dirs(cfg: dict[str, Any], model_path: str) -> dict[str, Path]:
     return {v: base / v for v in ONNX_VARIANTS}
 
 
+_PRESET_KEYS = ("max_new_tokens", "min_new_tokens", "length_penalty")
+
+
+def length_preset(cfg: dict[str, Any], length: str) -> dict[str, Any]:
+    """Một mức độ dài: số nguyên (= max_new_tokens) hoặc dict {max_new_tokens, min_new_tokens?, length_penalty?}."""
+    value = cfg["lengths"][length]
+    if isinstance(value, bool):
+        raise TypeError("phải là số nguyên hoặc dict")
+    if isinstance(value, int):
+        value = {"max_new_tokens": value}
+    if not isinstance(value, dict):
+        raise TypeError("phải là số nguyên hoặc dict")
+    unknown = set(value) - set(_PRESET_KEYS)
+    if unknown:
+        raise ValueError(f"khóa không hợp lệ {sorted(unknown)}; chỉ nhận {list(_PRESET_KEYS)}")
+    out = {"max_new_tokens": int(value["max_new_tokens"]), "min_new_tokens": int(value.get("min_new_tokens", 0) or 0),
+           "length_penalty": float(value.get("length_penalty", 1.0))}
+    if out["max_new_tokens"] <= 0 or out["min_new_tokens"] < 0:
+        raise ValueError("max_new_tokens phải > 0, min_new_tokens ≥ 0")
+    return out
+
+
 def generation_kwargs(cfg: dict[str, Any], length: str | None = None) -> dict[str, Any]:
-    """Generation config chung + max_new_tokens theo mức độ dài."""
+    """Generation config chung + tham số của mức độ dài (max/min_new_tokens, length_penalty).
+
+    ``max_new_tokens`` là giới hạn trên: model vẫn có thể dừng sớm hơn. ``min_new_tokens`` chặn token kết
+    thúc trước khi đủ độ dài; ``length_penalty`` > 1 khiến beam search ưu tiên câu dài hơn, < 1 ưu tiên câu ngắn.
+    Chỉ đưa khóa nào khác mặc định vào kwargs, nên mức không cấu hình gì giữ nguyên hành vi cũ.
+    """
     length = length or cfg["default_length"]
     if length not in cfg["lengths"]:
         raise ValueError(f"length phải thuộc {list(cfg['lengths'])}, nhận {length!r}")
     g = cfg["generation"]
-    return {
+    preset = length_preset(cfg, length)
+    out = {
         "num_beams": int(g["num_beams"]),
         "no_repeat_ngram_size": int(g["no_repeat_ngram_size"]),
         "early_stopping": bool(g.get("early_stopping", True)),
-        "max_new_tokens": int(cfg["lengths"][length]),
+        "max_new_tokens": preset["max_new_tokens"],
     }
+    if preset["min_new_tokens"]:
+        out["min_new_tokens"] = preset["min_new_tokens"]
+    if preset["length_penalty"] != 1.0 and out["num_beams"] > 1:
+        out["length_penalty"] = preset["length_penalty"]
+    return out

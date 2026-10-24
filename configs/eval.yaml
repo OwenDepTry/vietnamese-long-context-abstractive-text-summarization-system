@@ -55,6 +55,57 @@ systems:
     max_source_length: 1024
     source_prefix: ""
 
+  # Bước mở rộng 1: tóm tắt phân cấp cho văn bản dài. Tắt mặc định (không đổi kết quả chính);
+  # chạy riêng trên nhóm dài:
+  #   python scripts/evaluate.py --config configs/eval.yaml --subset long --systems vit5_lora,vit5_lora_hier --model_path ...
+  # Văn bản is_long (> long_doc_threshold_tokens): chia chunk từ document GỐC, tóm tắt từng chunk, ghép, tóm tắt lại
+  # (cùng thuật toán Summarizer phase 4). Văn bản ngắn: input_text như vit5_lora.
+  vit5_lora_hier:
+    enabled: false
+    type: seq2seq
+    description: "ViT5 + LoRA, văn bản dài: tóm tắt phân cấp"
+    model_path: null             # null -> cùng model với vit5_lora (--model_path)
+    input_column: input_text
+    max_source_length: 1024
+    source_prefix: ""
+    long_strategy: hierarchical
+    hierarchical:
+      data_config: configs/data.yaml   # tách câu, lọc trích xuất khi bản ghép vẫn quá dài
+      chunk_max_tokens: 1024           # = configs/inference.yaml long_document
+      overlap_tokens: 64
+      chunk_max_new_tokens: 48         # = mức short của API (chunk_length: short)
+      max_rounds: 3
+
+  # Biến thể: mỗi chunk được tóm tắt dài hơn (128 token) -> bớt mất thông tin ở vòng chia chunk.
+  vit5_lora_hier128:
+    enabled: false
+    type: seq2seq
+    description: "ViT5 + LoRA, văn bản dài: tóm tắt phân cấp, chunk 128 token"
+    model_path: null
+    input_column: input_text
+    max_source_length: 1024
+    source_prefix: ""
+    long_strategy: hierarchical
+    hierarchical:
+      data_config: configs/data.yaml
+      chunk_max_tokens: 1024
+      overlap_tokens: 64
+      chunk_max_new_tokens: 128
+      max_rounds: 3
+
+  # Bước mở rộng B: model sau distillation. Chạy riêng, đường dẫn truyền bằng --system_model:
+  #   python scripts/evaluate.py --config configs/eval.yaml --systems vit5_lora,vit5_distill \
+  #       --model_path C:/vnsum-runs/vit5-vnsum-merged --system_model vit5_distill=C:/vnsum-runs/vit5-vnsum-distill-merged \
+  #       --results_dir results/distill
+  vit5_distill:
+    enabled: false
+    type: seq2seq
+    description: "ViT5 + LoRA, train tiếp trên bản tóm tắt của LLM (bước B)"
+    model_path: null
+    input_column: input_text
+    max_source_length: 1024
+    source_prefix: ""
+
   # Tham chiếu công khai, đã xác minh trên Hub (2026-10-05):
   # https://huggingface.co/VietAI/vit5-base-vietnews-summarization — fine-tune trên VietNews,
   # model card dùng văn bản thường (không tách từ), không prefix.
@@ -124,7 +175,7 @@ judge:
   # 200 mẫu cũ lấy từ cache. Chi phí judge (Sonnet 4.6, $3/$15 mỗi 1M token) ~ $8 cho 200 mẫu x 4 hệ thống.
   sample_size: 200
   seed: 42
-  systems: [lead3, vit5_lora, vit5_public, llm_zeroshot]
+  systems: [lead3, vit5_lora, vit5_public, llm_zeroshot, vit5_lora_hier, vit5_distill]
   max_document_chars: 30000    # document dài hơn bị cắt (ghi cờ truncated trong cache)
   prompt_version: v1           # đổi khi sửa rubric/prompt -> cache cũ không bị dùng lại
 

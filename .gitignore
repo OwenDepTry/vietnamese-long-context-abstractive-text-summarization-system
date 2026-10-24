@@ -37,3 +37,6 @@ results/smoke/
 
 # thư mục model mặc định của docker-compose khi chưa đặt MODEL_DIR
 models/
+
+# Bước B: output của LLM (distillation) — không commit
+data/distill/

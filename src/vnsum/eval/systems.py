@@ -85,52 +85,168 @@ def resolve_dtype(name: str):
     return torch.float32
 
 
+class Seq2SeqGenerator:
+    """Nạp model seq2seq MỘT lần, sinh theo batch với generation config chung của phase 3."""
+
+    def __init__(self, model_path: str, sys_cfg: dict[str, Any], gen: dict[str, Any], token_env: str | None) -> None:
+        import torch
+        from transformers import AutoModelForSeq2SeqLM
+
+        from vnsum.data.tokenization import load_tokenizer
+
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        dtype = resolve_dtype(gen.get("dtype", "auto"))
+        token = os.environ.get(token_env) if token_env else None
+        logger.info("Load %s (%s, %s)", model_path, self.device, dtype)
+        self.model = AutoModelForSeq2SeqLM.from_pretrained(model_path, token=token or None, dtype=dtype).to(self.device).eval()
+        self.tok = load_tokenizer(model_path, token_env)
+        self.name = Path(str(model_path)).name
+        self.sys_cfg, self.gen = sys_cfg, gen
+
+    def generate(self, texts: Sequence[str], *, max_new_tokens: int | None = None, desc: str | None = None) -> list[str]:
+        import torch
+
+        try:
+            from tqdm.auto import tqdm
+        except ImportError:  # pragma: no cover
+            def tqdm(x, **_):
+                return x
+
+        sys_cfg, gen = self.sys_cfg, self.gen
+        prefix = sys_cfg.get("source_prefix") or ""
+        bs = int(gen["batch_size"])
+        order = sorted(range(len(texts)), key=lambda i: -len(texts[i]))  # gom input cùng độ dài -> ít padding
+        preds: list[str] = [""] * len(texts)
+        for start in tqdm(range(0, len(order), bs), desc=desc or f"generate {self.name}"):
+            idx = order[start : start + bs]
+            enc = self.tok(
+                [prefix + texts[i] for i in idx],
+                max_length=int(sys_cfg["max_source_length"]),
+                truncation=True,
+                padding=True,
+                return_tensors="pt",
+            ).to(self.device)
+            with torch.no_grad():
+                out = self.model.generate(
+                    input_ids=enc["input_ids"],
+                    attention_mask=enc["attention_mask"],
+                    num_beams=int(gen["num_beams"]),
+                    max_new_tokens=int(max_new_tokens or gen["max_new_tokens"]),
+                    no_repeat_ngram_size=int(gen["no_repeat_ngram_size"]),
+                    early_stopping=bool(gen.get("early_stopping", True)),
+                )
+            for i, text in zip(idx, self.tok.batch_decode(out, skip_special_tokens=True)):
+                preds[i] = text.strip()
+        return preds
+
+    def close(self) -> None:
+        import torch
+
+        del self.model
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+
 def generate_seq2seq(texts: Sequence[str], model_path: str, sys_cfg: dict[str, Any], gen: dict[str, Any], token_env: str | None) -> list[str]:
-    import torch
-    from transformers import AutoModelForSeq2SeqLM
-
-    from vnsum.data.tokenization import load_tokenizer
-
+    g = Seq2SeqGenerator(model_path, sys_cfg, gen, token_env)
     try:
-        from tqdm.auto import tqdm
-    except ImportError:  # pragma: no cover
-        def tqdm(x, **_):
-            return x
+        return g.generate(texts)
+    finally:
+        g.close()
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    dtype = resolve_dtype(gen.get("dtype", "auto"))
-    token = os.environ.get(token_env) if token_env else None
-    logger.info("Load %s (%s, %s)", model_path, device, dtype)
-    model = AutoModelForSeq2SeqLM.from_pretrained(model_path, token=token or None, dtype=dtype).to(device).eval()
-    tok = load_tokenizer(model_path, token_env)
-    prefix = sys_cfg.get("source_prefix") or ""
-    bs = int(gen["batch_size"])
-    order = sorted(range(len(texts)), key=lambda i: -len(texts[i]))  # gom input cùng độ dài -> ít padding
-    preds: list[str] = [""] * len(texts)
-    for start in tqdm(range(0, len(order), bs), desc=f"generate {Path(str(model_path)).name}"):
-        idx = order[start : start + bs]
-        enc = tok(
-            [prefix + texts[i] for i in idx],
-            max_length=int(sys_cfg["max_source_length"]),
-            truncation=True,
-            padding=True,
-            return_tensors="pt",
-        ).to(device)
-        with torch.no_grad():
-            out = model.generate(
-                input_ids=enc["input_ids"],
-                attention_mask=enc["attention_mask"],
-                num_beams=int(gen["num_beams"]),
-                max_new_tokens=int(gen["max_new_tokens"]),
-                no_repeat_ngram_size=int(gen["no_repeat_ngram_size"]),
-                early_stopping=bool(gen.get("early_stopping", True)),
+
+# --------------------------------------------------------------------------- #
+# Tóm tắt phân cấp cho văn bản dài (cùng thuật toán với Summarizer phase 4)
+# --------------------------------------------------------------------------- #
+
+
+def hierarchical_inputs(
+    docs: Sequence[str],
+    generate,
+    counter,
+    *,
+    max_input_tokens: int,
+    chunk_max_tokens: int,
+    overlap_tokens: int,
+    chunk_max_new_tokens: int,
+    max_rounds: int,
+    extract,
+    splitter,
+) -> tuple[list[str], list[int]]:
+    """Trả (input cho lần sinh cuối, số vòng chia chunk) cho từng văn bản.
+
+    Mỗi vòng: chia văn bản còn quá dài thành chunk (≤ ``chunk_max_tokens``, overlap theo câu), tóm tắt mọi
+    chunk của mọi văn bản trong MỘT lần gọi ``generate`` (batch), ghép các bản tóm tắt. Dừng khi vừa
+    ``max_input_tokens`` hoặc hết ``max_rounds``; còn quá dài thì lọc trích xuất như lúc train.
+    ``generate(texts, max_new_tokens)`` -> list[str].
+    """
+    from vnsum.data.long_context import chunk_document
+
+    budget = counter.budget(int(max_input_tokens))
+    current = list(docs)
+    rounds = [0] * len(current)
+    for _ in range(int(max_rounds)):
+        todo = [i for i, t in enumerate(current) if counter.count(t) > budget]
+        if not todo:
+            break
+        owners, chunk_texts = [], []
+        for i in todo:
+            for c in chunk_document(current[i], counter, chunk_max_tokens=int(chunk_max_tokens),
+                                    overlap_tokens=int(overlap_tokens), splitter=splitter):
+                owners.append(i)
+                chunk_texts.append(c.text)
+        parts = generate(chunk_texts, int(chunk_max_new_tokens))
+        joined: dict[int, list[str]] = {i: [] for i in todo}
+        for i, part in zip(owners, parts):
+            if part:
+                joined[i].append(part)
+        for i in todo:
+            current[i] = " ".join(joined[i])
+            rounds[i] += 1
+    return [t if counter.count(t) <= budget else extract(t) for t in current], rounds
+
+
+def run_hierarchical_seq2seq(df, model_path: str, sys_cfg: dict[str, Any], cfg: dict[str, Any]) -> list[str]:
+    """Văn bản dài (``is_long``) -> tóm tắt phân cấp từ document gốc; văn bản ngắn -> ``input_column`` như thường."""
+    from vnsum.config import load_config
+    from vnsum.data.long_context import extractive_filter
+    from vnsum.data.preprocess import split_sentences as _split
+    from vnsum.data.tokenization import TokenCounter
+
+    h = sys_cfg["hierarchical"]
+    data_cfg = load_config(h.get("data_config", "configs/data.yaml"))
+    sc = data_cfg.get("sentence_split", {}) or {}
+    splitter = lambda t: _split(t, backend=sc.get("backend", "rule"), min_chars=int(sc.get("min_chars", 2)))  # noqa: E731
+    ex = data_cfg["long_context"]["extractive_filter"]
+    max_in = int(sys_cfg["max_source_length"])
+    g = Seq2SeqGenerator(model_path, sys_cfg, cfg["generation"], cfg.get("hf", {}).get("token_env"))
+    try:
+        counter = TokenCounter(g.tok, int(data_cfg["tokenizer"].get("reserve_special_tokens", 1)))
+
+        def extract(t: str) -> str:
+            return extractive_filter(t, counter, max_input_tokens=max_in, ranker=ex["ranker"], selection=ex["selection"],
+                                     keep_ratio=float(ex["keep_ratio"]), min_sentences=int(ex["min_sentences"]),
+                                     only_if_exceeds=bool(ex["only_if_exceeds"]), ranker_params=dict(ex.get(ex["ranker"], {})),
+                                     splitter=splitter).text
+
+        is_long = df["is_long"].astype(bool).tolist()
+        inputs = df[sys_cfg["input_column"]].fillna("").tolist()
+        long_idx = [k for k, v in enumerate(is_long) if v]
+        if long_idx:
+            final, rounds = hierarchical_inputs(
+                df["document"].fillna("").iloc[long_idx].tolist(),
+                lambda texts, n: g.generate(texts, max_new_tokens=n, desc="hierarchical: chunk"),
+                counter, max_input_tokens=max_in, chunk_max_tokens=int(h["chunk_max_tokens"]),
+                overlap_tokens=int(h["overlap_tokens"]), chunk_max_new_tokens=int(h["chunk_max_new_tokens"]),
+                max_rounds=int(h["max_rounds"]), extract=extract, splitter=splitter,
             )
-        for i, text in zip(idx, tok.batch_decode(out, skip_special_tokens=True)):
-            preds[i] = text.strip()
-    del model
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-    return preds
+            for k, t in zip(long_idx, final):
+                inputs[k] = t
+            logger.info("hierarchical: %d văn bản dài, số vòng chia chunk %s", len(long_idx),
+                        {r: rounds.count(r) for r in sorted(set(rounds))})
+        return g.generate(inputs, desc="hierarchical: final")
+    finally:
+        g.close()
 
 
 # --------------------------------------------------------------------------- #
@@ -198,6 +314,8 @@ def run_system(
         kind = sys_cfg["type"]
         if kind == "lead":
             preds = [lead_n(t, int(sys_cfg.get("num_sentences", 3))) for t in texts]
+        elif kind == "seq2seq" and sys_cfg.get("long_strategy") == "hierarchical":
+            preds = run_hierarchical_seq2seq(todo, str(model_path), sys_cfg, cfg)
         elif kind == "seq2seq":
             preds = generate_seq2seq(texts, str(model_path), sys_cfg, cfg["generation"], cfg.get("hf", {}).get("token_env"))
         elif kind == "llm":

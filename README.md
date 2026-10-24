@@ -196,9 +196,10 @@ python scripts/benchmark.py --config configs/inference.yaml --model_path <model 
 ```
 
 - **Export:** `optimum` export encoder + decoder + decoder_with_past (KV cache); mỗi file được lượng tử hóa dynamic INT8 bằng `ORTQuantizer`. File ONNX nằm cạnh model gốc (`<model>-onnx/{fp32,int8}`), không nằm trong repo. ONNX FP32 cho output giống hệt PyTorch ở 100/100 tài liệu benchmark.
-- **`Summarizer`** (`src/vnsum/inference/predictor.py`): một interface cho backend PyTorch và ONNX, ba mức độ dài `short/medium/long` → `max_new_tokens` 48/128/256, văn bản dài xử lý theo `long_document.strategy` (đưa thẳng / extractive filter như lúc train / hierarchical: tóm tắt từng chunk rồi tóm tắt bản ghép).
+- **`Summarizer`** (`src/vnsum/inference/predictor.py`): một interface cho backend PyTorch và ONNX, ba mức độ dài `short/medium/long` (max_new_tokens 48/128/256; short thêm `length_penalty` 0.6, long thêm `min_new_tokens` 64 và `length_penalty` 2.0; medium giữ đúng cấu hình phase 3), văn bản dài xử lý theo `long_document.strategy` (đưa thẳng / extractive filter như lúc train / hierarchical: tóm tắt từng chunk rồi tóm tắt bản ghép).
 - **Benchmark:** cùng 100 tài liệu test và generation config với phase 3, 5 lần warmup, mỗi lượt chạy một process riêng; đo p50/p95, throughput, RAM/VRAM đỉnh, kích thước trên đĩa và ROUGE-L so với PyTorch (cảnh báo khi giảm quá 1 điểm); ghi cấu hình phần cứng thật.
 - **Spin-wait của ONNX Runtime** được tắt (`onnx.allow_spinning: false`): khi bật, thread pool của ORT giành CPU với PyTorch trong vòng beam search (đo bằng `scripts/profile_onnx.py`: 3,829 → 1,683 ms trên 2 tài liệu).
+- **Đo thêm cấu hình:** `--num_beams 1` (greedy), `--length short`, `--tag <tên>` để ghi ra `results/benchmark_<tên>.md` mà không ghi đè bản chính.
 - **FP16 không dùng được:** chuyển FP32 → FP16 (2 lần thử, lần 2 giữ LayerNorm/residual/softmax/FFN đầu ra ở FP32) đều cho chuỗi vô nghĩa, trong khi ONNX FP32 trên cùng GPU cho kết quả đúng (`scripts/check_gpu_onnx.py`). Cờ `--fp16` vẫn còn nhưng không nằm trong benchmark.
 
 ## Phase 5 — API, UI, Docker
@@ -253,7 +254,7 @@ python -m pytest tests/test_api.py tests/test_inference.py     # trong .venv-onn
 
 ## Giới hạn còn lại
 
-- **Mức độ dài là giới hạn trên** (`max_new_tokens` 48/128/256), không ép độ dài tối thiểu: khi model tự kết thúc sớm, ba mức cho cùng một bản tóm tắt (đã gặp khi chạy thử UI với một văn bản quy định 17 token ở cả ba mức).
+- **Mức độ dài:** bản đầu chỉ có giới hạn trên (`max_new_tokens`), nên khi model tự dừng sớm ba mức ra cùng một bản (đã gặp trên UI: 17 token ở cả ba mức). Đã thêm `min_new_tokens` / `length_penalty` cho short và long; đo mức khác biệt bằng `scripts/compare_lengths.py` (→ `results/lengths.md`).
 - **Ngoài miền dữ liệu train** (tin tức VietNews, hướng dẫn wikiHow), ví dụ văn bản hành chính dạng danh sách, model thường chỉ chép câu mở đầu — thói quen học từ tin tức, nơi câu đầu thường là tóm tắt tốt.
 - Latency < 500 ms chưa đạt ở cấu hình đã đo (beam 4, batch 1); greedy, mức `short` hay batch lớn hơn chưa được benchmark.
 - Docker image chỉ có bản CPU; GPU (ONNX FP32 nhanh nhất trong benchmark) mới chạy được ngoài Docker.

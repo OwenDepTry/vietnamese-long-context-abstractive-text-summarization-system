@@ -18,7 +18,7 @@ from vnsum.inference.bench import (
     RUNS, bucket_edges_labels, bucket_latency, latency_stats, runs_for, select_documents, write_report,
 )
 from vnsum.inference.config import (
-    InferenceConfigError, generation_kwargs, load_inference_config, onnx_dirs, resolve_model_path,
+    InferenceConfigError, generation_kwargs, length_preset, load_inference_config, onnx_dirs, resolve_model_path,
     validate_inference_config,
 )
 from vnsum.inference.export import SAMPLE_TEXT, check_vietnamese_output
@@ -41,10 +41,21 @@ def data_cfg():
 
 # --------------------------------------------------------------------------- config
 def test_repo_config_and_length_presets(cfg):
-    for name, tokens in cfg["lengths"].items():
+    for name in cfg["lengths"]:
         g = generation_kwargs(cfg, name)
-        assert g["max_new_tokens"] == tokens and g["num_beams"] == 4 and g["no_repeat_ngram_size"] == 3
-    assert generation_kwargs(cfg)["max_new_tokens"] == cfg["lengths"][cfg["default_length"]] == 128
+        assert g["max_new_tokens"] == length_preset(cfg, name)["max_new_tokens"] and g["num_beams"] == 4
+    # medium giữ nguyên generation config của phase 3 (so sánh được với benchmark / eval)
+    assert generation_kwargs(cfg) == {"num_beams": 4, "no_repeat_ngram_size": 3, "early_stopping": True, "max_new_tokens": 128}
+    assert generation_kwargs(cfg, "long")["min_new_tokens"] == 64 and generation_kwargs(cfg, "long")["length_penalty"] == 2.0
+    assert generation_kwargs(cfg, "short")["length_penalty"] == 0.6 and "min_new_tokens" not in generation_kwargs(cfg, "short")
+    greedy = copy.deepcopy(cfg)
+    greedy["generation"]["num_beams"] = 1
+    assert "length_penalty" not in generation_kwargs(greedy, "long")        # length_penalty chỉ dùng cho beam search
+    old_style = copy.deepcopy(cfg)
+    old_style["lengths"] = {"short": 48, "medium": 128, "long": 256}           # dạng số nguyên cũ vẫn hợp lệ
+    validate_inference_config(old_style)
+    assert generation_kwargs(old_style, "long") == {"num_beams": 4, "no_repeat_ngram_size": 3, "early_stopping": True,
+                                                    "max_new_tokens": 256}
     with pytest.raises(ValueError):
         generation_kwargs(cfg, "rat_dai")
 
@@ -52,7 +63,10 @@ def test_repo_config_and_length_presets(cfg):
 def test_config_rejects_bad_values(cfg):
     for path, value in ((("backend",), "tensorrt"), (("onnx", "variant"), "int4"), (("pytorch", "dtype"), "fp16"),
                         (("default_length",), "xl"), (("long_document", "chunk_max_tokens"), 4096),
-                        (("export", "quantization", "isa"), "neon")):
+                        (("export", "quantization", "isa"), "neon"),
+                        (("lengths", "long"), {"max_new_tokens": 32, "min_new_tokens": 64}),
+                        (("lengths", "short"), {"max_new_tokens": 48, "temperature": 0.7}),
+                        (("lengths", "short"), 0)):
         bad = copy.deepcopy(cfg)
         node = bad
         for k in path[:-1]:
@@ -97,7 +111,7 @@ def test_direct_when_document_fits(small):
     summ, backend, cfg = small
     r = summ.summarize("Hà Nội hôm nay có mưa rào. Nhiệt độ giảm nhẹ.", length="short")
     assert r.strategy == "direct" and r.generate_calls == 1 and len(backend.calls) == 1
-    assert backend.calls[0][1]["max_new_tokens"] == cfg["lengths"]["short"]
+    assert backend.calls[0][1]["max_new_tokens"] == length_preset(cfg, "short")["max_new_tokens"]
     assert r.model_input == "Hà Nội hôm nay có mưa rào. Nhiệt độ giảm nhẹ."
     assert set(r.timings_ms) >= {"preprocess_ms", "generate_ms", "total_ms"}
 
@@ -117,8 +131,8 @@ def test_hierarchical_summarizes_chunks_then_combines(small, make_doc):
     r = summ.summarize(doc, length="long")
     chunk_calls, final = backend.calls[:-1], backend.calls[-1]
     assert r.strategy == "hierarchical" and len(chunk_calls) >= 2
-    assert all(c[1]["max_new_tokens"] == cfg["lengths"]["short"] for c in chunk_calls)
-    assert final[1]["max_new_tokens"] == cfg["lengths"]["long"]
+    assert all(c[1]["max_new_tokens"] == length_preset(cfg, "short")["max_new_tokens"] for c in chunk_calls)
+    assert final[1]["max_new_tokens"] == length_preset(cfg, "long")["max_new_tokens"]
     assert all(summ.counter.count(c[0][0]) <= 29 for c in chunk_calls)   # mỗi chunk vừa ngân sách
     assert r.generate_calls == len(backend.calls)
     # Vòng 1 tạo ~19 bản tóm tắt chunk (76 "token") > ngân sách 39 -> phải có vòng 2 trên bản ghép.

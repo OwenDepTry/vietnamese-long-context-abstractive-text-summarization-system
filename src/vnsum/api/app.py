@@ -25,7 +25,7 @@ from starlette.concurrency import run_in_threadpool
 
 from vnsum.api.settings import ApiSettings, api_config
 from vnsum.api.streaming import StreamingBackend, sse_event
-from vnsum.inference.config import load_inference_config
+from vnsum.inference.config import length_preset, load_inference_config
 
 logger = logging.getLogger("vnsum.api")
 request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="-")
@@ -151,7 +151,8 @@ def create_app(settings: ApiSettings | None = None, cfg: dict[str, Any] | None =
             "status": "ok",
             "backend": _backend_info(summ.backend).model_dump(),
             "stream_backend": _backend_info(request.app.state.stream_summarizer.backend).model_dump(),
-            "lengths": {k: int(v) for k, v in cfg["lengths"].items()},
+            "lengths": {k: length_preset(cfg, k)["max_new_tokens"] for k in cfg["lengths"]},
+            "length_presets": {k: length_preset(cfg, k) for k in cfg["lengths"]},
             "default_length": cfg["default_length"],
             "max_input_chars": int(acfg["max_input_chars"]),
         }

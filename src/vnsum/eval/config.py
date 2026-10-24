@@ -27,6 +27,13 @@ def validate_eval_config(cfg: dict[str, Any]) -> None:
     for name, sys_cfg in cfg["systems"].items():
         if sys_cfg.get("type") not in SYSTEM_TYPES:
             raise EvalConfigError(f"systems.{name}.type phải thuộc {SYSTEM_TYPES}")
+        if sys_cfg.get("long_strategy") not in (None, "extractive", "hierarchical"):
+            raise EvalConfigError(f"systems.{name}.long_strategy phải là extractive | hierarchical")
+        if sys_cfg.get("long_strategy") == "hierarchical":
+            need = ("chunk_max_tokens", "overlap_tokens", "chunk_max_new_tokens", "max_rounds")
+            miss = [k for k in need if k not in (sys_cfg.get("hierarchical") or {})]
+            if sys_cfg["type"] != "seq2seq" or miss:
+                raise EvalConfigError(f"systems.{name}: long_strategy hierarchical cần type seq2seq và hierarchical.{need} (thiếu {miss})")
         if sys_cfg["type"] == "llm" and sys_cfg.get("client") not in cfg["llm"]:
             raise EvalConfigError(f"systems.{name}.client={sys_cfg.get('client')!r} không có trong mục llm")
     for name, client in cfg["llm"].items():

@@ -1,0 +1,60 @@
+# =============================================================================
+# Bước mở rộng B — dữ liệu distillation (LLM viết bản tóm tắt đầy đủ ý cho một phần tập TRAIN).
+#   python scripts/distill_data.py --config configs/distill.yaml              # chỉ ước tính, KHÔNG gọi API
+#   python scripts/distill_data.py --config configs/distill.yaml --allow_api  # gọi API trả phí (có cache)
+# Chỉ lấy từ split train -> tập test của phase 3 không bị rò rỉ.
+# =============================================================================
+
+seed: 42
+processed_dir: data/processed
+out_dir: data/distill            # cache.jsonl (output thô của API), train.parquet, stats.md
+
+# Số bài lấy mẫu (seed) từ split train. Bản thử: 5,000; mở rộng thì tăng số này — mẫu lồng nhau
+# theo seed nên phần đã gọi API được lấy lại từ cache.
+samples:
+  vietnews: 3500
+  wikilingua_vi: 1500
+
+max_input_chars: 12000           # input_text ≤ 1024 token ViT5, thường < 6,000 ký tự
+
+# Lọc trước khi train
+filter:
+  tokenizer: VietAI/vit5-base    # đếm token như lúc train
+  token_env: HF_TOKEN
+  max_target_tokens: 128         # = data.max_target_length lúc train; dài hơn sẽ bị cắt cụt -> bỏ
+  min_syllables: 15
+
+# Đơn giá để IN ƯỚC TÍNH trước khi chạy (không dùng vào việc gì khác). Ghi theo trang giá của nhà
+# cung cấp; kiểm tra lại trước khi chạy. chars_per_token: ước lượng thô cho tiếng Việt.
+price:
+  input_per_mtok: 0.10
+  output_per_mtok: 0.50
+  chars_per_token: 3.0
+  expected_output_tokens: 200    # gồm cả token reasoning (nếu có)
+
+# Cùng định dạng với mục llm của configs/eval.yaml. Khóa API đọc từ biến môi trường, không ghi vào file.
+# Lưu ý điều khoản: kiểm tra điều khoản của nhà cung cấp về việc dùng output để huấn luyện model.
+llm:
+  provider: openai_compatible
+  base_url: https://api.openai.com/v1
+  model: gpt-6-luna
+  api_key_env: OPENAI_API_KEY
+  max_tokens_field: max_completion_tokens
+  temperature: 0
+  max_tokens: 512
+  extra_body:
+    reasoning_effort: none
+  concurrency: 4
+  timeout_seconds: 120
+  max_retries: 5
+  prompt: |
+    Tóm tắt văn bản tiếng Việt dưới đây trong 2–4 câu, tổng cộng không quá 60 từ.
+    Yêu cầu:
+    - Bao quát các ý chính của TOÀN BỘ văn bản, không chỉ phần mở đầu.
+    - Diễn đạt lại bằng lời của bạn, nhưng giữ đúng tên riêng, số liệu, thời gian, địa điểm.
+    - Chỉ dùng thông tin có trong văn bản; không suy đoán, không bình luận, không thêm kiến thức bên ngoài.
+    - Viết thành một đoạn văn, không gạch đầu dòng, không tiêu đề.
+    Chỉ trả về đoạn tóm tắt.
+
+    Văn bản:
+    {document}

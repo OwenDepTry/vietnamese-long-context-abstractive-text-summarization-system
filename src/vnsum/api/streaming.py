@@ -46,7 +46,8 @@ class StreamingBackend:
         call = self.calls
         self.calls += 1
         streamer = self.streamer_factory(self.tokenizer)
-        kwargs = {k: v for k, v in gen_kwargs.items() if k != "early_stopping"}
+        # early_stopping / length_penalty chỉ có nghĩa với beam search
+        kwargs = {k: v for k, v in gen_kwargs.items() if k not in ("early_stopping", "length_penalty")}
         kwargs.update(num_beams=1, streamer=streamer)   # streamer của transformers không hỗ trợ beam search
         result: dict[str, Any] = {}
 

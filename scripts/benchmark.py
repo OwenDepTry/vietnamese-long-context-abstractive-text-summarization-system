@@ -38,6 +38,8 @@ def parse_args(argv=None):
     p.add_argument("--device", choices=["cpu", "cuda", "all"], default="all")
     p.add_argument("--runs", default=None, help=f"chọn lượt chạy, phân cách dấu phẩy: {','.join(RUNS)}")
     p.add_argument("--length", default=None, help="mức độ dài (mặc định benchmark.length)")
+    p.add_argument("--num_beams", type=int, default=None, help="override generation.num_beams (vd. 1 = greedy)")
+    p.add_argument("--tag", default=None, help="hậu tố tên kết quả: results/benchmark_<tag>.md (không ghi đè bản chính)")
     p.add_argument("--warmup", type=int, default=None)
     p.add_argument("--worker", default=None, help=argparse.SUPPRESS)
     p.add_argument("--out", default=None, help=argparse.SUPPRESS)
@@ -168,6 +170,8 @@ def main(argv=None) -> int:
     args = parse_args(argv)
     logging.basicConfig(level=args.log_level, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     cfg = load_inference_config(args.config)
+    if args.num_beams:
+        cfg["generation"]["num_beams"] = int(args.num_beams)
     if args.worker:
         return run_worker(args, cfg)
 
@@ -178,7 +182,8 @@ def main(argv=None) -> int:
     gen_kwargs = generation_kwargs(cfg, length)
     model_path = resolve_model_path(cfg, args.model_path)
     results_dir = Path(b["results_dir"]) / ("smoke" if args.limit else "")
-    raw_dir = results_dir / "benchmark"
+    name = f"benchmark_{args.tag}" if args.tag else "benchmark"
+    raw_dir = results_dir / name
     raw_dir.mkdir(parents=True, exist_ok=True)
     keys = runs_for(args.device)
     if args.runs:
@@ -206,6 +211,8 @@ def main(argv=None) -> int:
             cmd += ["--limit", str(args.limit)]
         if args.length:
             cmd += ["--length", args.length]
+        if args.num_beams:
+            cmd += ["--num_beams", str(args.num_beams)]
         if args.warmup is not None:
             cmd += ["--warmup", str(args.warmup)]
         print(f"[{key}] đang chạy ...", flush=True)
@@ -239,7 +246,7 @@ def main(argv=None) -> int:
     (raw_dir / "system_info.json").write_text(json.dumps(info, ensure_ascii=False, indent=1), encoding="utf-8")
 
     command = "python scripts/benchmark.py " + " ".join(sys.argv[1:] if argv is None else argv)
-    report = results_dir / "benchmark.md"
+    report = results_dir / f"{name}.md"
     warnings = write_report(results, docs["summary"].tolist(), cfg, info, report, command=command, gen_kwargs=gen_kwargs)
     for w in warnings:
         print(f"CẢNH BÁO: {w}")

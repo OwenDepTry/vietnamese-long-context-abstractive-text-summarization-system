@@ -207,6 +207,7 @@ def test_stream_emits_tokens_then_done(cfg, data_cfg):
     assert "".join(d["text"] for k, d in events if k == "token").strip() == done["summary"]
     assert done["decoding"] == "greedy" and done["latency_ms"] >= 0 and done["request_id"] == events[0][1]["request_id"]
     assert backend.calls[0]["num_beams"] == 1 and backend.calls[0]["max_new_tokens"] == 256
+    assert backend.calls[0]["min_new_tokens"] == 64 and "length_penalty" not in backend.calls[0]
 
 
 def test_stream_reports_error_event(cfg, data_cfg):
