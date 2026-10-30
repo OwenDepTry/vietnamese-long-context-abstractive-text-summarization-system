@@ -1,17 +1,17 @@
 # Phase 3 — Báo cáo đánh giá
 
-Sinh tự động lúc 2026-10-23 10:28 UTC bởi `scripts/evaluate.py`. Mọi con số dưới đây được tính từ `per_sample.csv` / `metrics.csv` trong cùng thư mục.
+Sinh tự động lúc 2026-10-30 10:38 UTC bởi `scripts/evaluate.py`. Mọi con số dưới đây được tính từ `per_sample.csv` / `metrics.csv` trong cùng thư mục.
 
 ## Thiết lập
 
 - Tập đánh giá: split `test`, wikilingua_vi: 125 mẫu, vietnews: 100 mẫu; nhóm long (document > 1024 token): 225 mẫu.
 - Generation (model seq2seq): num_beams=4, max_new_tokens=128, no_repeat_ngram_size=3, early_stopping=True.
-- Hệ thống: `vit5_lora` = ViT5-base + LoRA r=16 (phase 2), C:\vnsum-runs\vit5-vnsum-merged (input `input_text`); `vit5_lora_hier` = ViT5 + LoRA, văn bản dài: tóm tắt phân cấp, C:\vnsum-runs\vit5-vnsum-merged (input `input_text`).
+- Hệ thống: `vit5_lora` = ViT5-base + LoRA r=16 (phase 2), C:/vnsum-runs/vit5-vnsum-merged (input `input_text`); `vit5_lora_hier` = ViT5 + LoRA, văn bản dài: tóm tắt phân cấp, C:/vnsum-runs/vit5-vnsum-merged (input `input_text`); `vit5_lora_hier_concat` = ViT5 + LoRA, văn bản dài: tóm tắt từng chunk, ghép + bỏ câu trùng (không sinh lại), C:/vnsum-runs/vit5-vnsum-merged (input `input_text`).
 - ROUGE: F1 trung bình theo mẫu, tokenizer âm tiết giữ dấu tiếng Việt (thang 0–100).
 - BERTScore: vinai/phobert-base, num_layers=10, tách từ underthesea, ≤ 256 subword, **raw (không rescale)**, thang 0–100.
-- BERTScore: 2/900 chuỗi (prediction + reference) bị cắt ở 256 subword PhoBERT.
+- BERTScore: 3/1,350 chuỗi (prediction + reference) bị cắt ở 256 subword PhoBERT.
 
-**Không có trong kết quả:** `vit5_lora` (judge) (cần --allow_api); `vit5_lora_hier` (judge) (cần --allow_api).
+**Không có trong kết quả:** `vit5_lora` (judge) (cần --allow_api); `vit5_lora_hier` (judge) (cần --allow_api); `vit5_lora_hier_concat` (judge) (cần --allow_api).
 
 ## Kết quả chính (toàn bộ tập đánh giá)
 
@@ -19,6 +19,7 @@ Sinh tự động lúc 2026-10-23 10:28 UTC bởi `scripts/evaluate.py`. Mọi c
 |---|---|---|---|---|---|
 | `vit5_lora` | 225 | 28.01 | 13.73 | 20.70 | 55.34 |
 | `vit5_lora_hier` | 225 | 16.30 | 7.91 | 13.48 | 46.77 |
+| `vit5_lora_hier_concat` | 225 | 30.86 | 15.02 | 22.25 | 57.03 |
 
 ## Theo dataset
 
@@ -28,6 +29,8 @@ Sinh tự động lúc 2026-10-23 10:28 UTC bởi `scripts/evaluate.py`. Mọi c
 | `vit5_lora` | wikilingua_vi | 125 | 29.41 | 14.53 | 22.33 | 59.25 |
 | `vit5_lora_hier` | vietnews | 100 | 23.03 | 11.40 | 17.99 | 48.91 |
 | `vit5_lora_hier` | wikilingua_vi | 125 | 10.92 | 5.12 | 9.87 | 45.07 |
+| `vit5_lora_hier_concat` | vietnews | 100 | 27.83 | 13.69 | 19.52 | 51.62 |
+| `vit5_lora_hier_concat` | wikilingua_vi | 125 | 33.28 | 16.08 | 24.44 | 61.36 |
 
 ## Theo độ dài document (long vs short)
 
@@ -35,6 +38,7 @@ Sinh tự động lúc 2026-10-23 10:28 UTC bởi `scripts/evaluate.py`. Mọi c
 |---|---|---|---|---|---|---|
 | `vit5_lora` | long | 225 | 28.01 | 13.73 | 20.70 | 55.34 |
 | `vit5_lora_hier` | long | 225 | 16.30 | 7.91 | 13.48 | 46.77 |
+| `vit5_lora_hier_concat` | long | 225 | 30.86 | 15.02 | 22.25 | 57.03 |
 
 ## Chỉ số phụ (toàn bộ tập đánh giá)
 
@@ -44,6 +48,7 @@ Lặp = tỷ lệ n-gram trong summary là bản lặp của n-gram đứng trư
 |---|---|---|---|---|
 | `vit5_lora` | 30.8 | 0.16 | 0.92 | 15.67 |
 | `vit5_lora_hier` | 15.9 | 0.02 | 2.53 | 18.55 |
+| `vit5_lora_hier_concat` | 53.8 | 1.62 | 1.58 | 18.72 |
 | *reference (tham chiếu)* | 52.8 | 1.42 | 12.00 | 52.15 |
 
 ## Khoảng tin cậy 95% (bootstrap, 1,000 lần lấy lại)
@@ -54,6 +59,7 @@ Lặp = tỷ lệ n-gram trong summary là bản lặp của n-gram đứng trư
 |---|---|---|---|---|
 | `vit5_lora` | 28.01 [26.40, 29.59] | 13.73 [12.40, 15.10] | 20.70 [19.38, 22.11] | 55.34 [54.19, 56.45] |
 | `vit5_lora_hier` | 16.30 [14.76, 18.07] | 7.91 [6.65, 9.28] | 13.48 [12.08, 15.01] | 46.77 [45.70, 47.88] |
+| `vit5_lora_hier_concat` | 30.86 [29.28, 32.34] | 15.02 [13.75, 16.37] | 22.25 [20.84, 23.63] | 57.03 [55.93, 58.09] |
 
 ## So sánh cặp với `vit5_lora` (paired bootstrap)
 
@@ -65,13 +71,17 @@ Hiệu = vit5_lora − hệ thống, tính trên cùng các mẫu. Khác biệt 
 | `vit5_lora_hier` | ROUGE-2 | 225 | +5.82 | [+4.37, +7.08] | < 0.001 | có ý nghĩa: vit5_lora cao hơn |
 | `vit5_lora_hier` | ROUGE-L | 225 | +7.22 | [+5.65, +8.70] | < 0.001 | có ý nghĩa: vit5_lora cao hơn |
 | `vit5_lora_hier` | BERTScore-F | 225 | +8.56 | [+7.25, +9.89] | < 0.001 | có ý nghĩa: vit5_lora cao hơn |
+| `vit5_lora_hier_concat` | ROUGE-1 | 225 | -2.85 | [-4.19, -1.66] | < 0.001 | có ý nghĩa: vit5_lora_hier_concat cao hơn |
+| `vit5_lora_hier_concat` | ROUGE-2 | 225 | -1.29 | [-2.40, -0.28] | 0.012 | có ý nghĩa: vit5_lora_hier_concat cao hơn |
+| `vit5_lora_hier_concat` | ROUGE-L | 225 | -1.55 | [-2.66, -0.48] | 0.002 | có ý nghĩa: vit5_lora_hier_concat cao hơn |
+| `vit5_lora_hier_concat` | BERTScore-F | 225 | -1.70 | [-2.51, -0.94] | < 0.001 | có ý nghĩa: vit5_lora_hier_concat cao hơn |
 
 ## Giới hạn của phương pháp đánh giá
 
 - **ROUGE** đo trùng lặp bề mặt theo âm tiết (tokenizer giữ dấu, không tách từ, không stemming); không đo được diễn đạt lại hay tính đúng sự thật. Số liệu không so trực tiếp được với các bài báo dùng văn bản đã tách từ hoặc tokenizer khác.
 - **Reference VietNews là phần tóm tắt (sapo) đi kèm bài báo**, thường bám sát các câu mở đầu, nên Lead-3 có thể được lợi trên VietNews; reference WikiLingua là các câu tóm tắt ý chính của từng phần hướng dẫn wikiHow.
 - **BERTScore** dùng PhoBERT-base, lớp 10, input tách từ bằng underthesea (PhoBERT được huấn luyện với VnCoreNLP RDRSegmenter, nên có thể lệch tách từ), cắt ≤ 256 subword. **Không có baseline rescale cho PhoBERT → điểm là RAW**, thường dồn trong một dải hẹp ở mức cao; chỉ có ý nghĩa khi so tương đối giữa các hệ thống trong cùng bảng.
-- **Faithfulness (LLM-as-Judge)**, khi được chạy, chỉ chấm tối đa 225 mẫu/hệ thống (ngẫu nhiên, seed 42) bằng một model (claude-sonnet-4-6); độ tin cậy của judge được đối chiếu với người chấm trong `human_eval/agreement.md` (nếu đã chạy); judge có thể sai và nhạy với cách viết prompt. Judge được chọn khác họ với LLM zero-shot để giảm thiên vị, nhưng không loại trừ hoàn toàn. Document dài hơn 30000 ký tự bị cắt trước khi chấm.
+- **Faithfulness (LLM-as-Judge)**, khi được chạy, chỉ chấm tối đa 200 mẫu/hệ thống (ngẫu nhiên, seed 42) bằng một model (claude-sonnet-4-6); độ tin cậy của judge được đối chiếu với người chấm trong `human_eval/agreement.md` (nếu đã chạy); judge có thể sai và nhạy với cách viết prompt. Judge được chọn khác họ với LLM zero-shot để giảm thiên vị, nhưng không loại trừ hoàn toàn. Document dài hơn 30000 ký tự bị cắt trước khi chấm.
 - **Faithfulness ưu ái hệ thống chép nguyên văn:** Lead-3 chỉ chép câu từ văn bản gốc nên gần như luôn đạt điểm tối đa. Cần đọc faithfulness cùng tỷ lệ novel n-gram (mức độ diễn đạt lại) và ROUGE.
 - **LLM zero-shot** nhận document gốc đầy đủ (≤ 30000 ký tự) và sinh bằng API (không dùng được beam search / no_repeat_ngram), trong khi ViT5 nhận input đã lọc extractive ≤ 1024 token — hai điều kiện input khác nhau là có chủ đích (so sánh model ngữ cảnh dài với pipeline ngữ cảnh ngắn).
 - **ViT5 công khai** (VietAI/vit5-base-vietnews-summarization) được fine-tune trên VietNews; không kiểm chứng được split train của nó có trùng tập test ở đây hay không. Trên WikiLingua nó là out-of-domain.
