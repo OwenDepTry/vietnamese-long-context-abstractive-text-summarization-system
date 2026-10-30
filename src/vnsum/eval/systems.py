@@ -101,7 +101,9 @@ class Seq2SeqGenerator:
         self.model = AutoModelForSeq2SeqLM.from_pretrained(model_path, token=token or None, dtype=dtype).to(self.device).eval()
         self.tok = load_tokenizer(model_path, token_env)
         self.name = Path(str(model_path)).name
-        self.sys_cfg, self.gen = sys_cfg, gen
+        # sys_cfg.generation (tùy chọn) ghi đè generation chung cho riêng hệ thống này, vd. tham số độ dài đã
+        # tune ở bước 2 (scripts/tune_lengths.py) mà không làm đổi các hệ thống khác.
+        self.sys_cfg, self.gen = sys_cfg, {**gen, **(sys_cfg.get("generation") or {})}
 
     def generate(self, texts: Sequence[str], *, max_new_tokens: int | None = None, desc: str | None = None) -> list[str]:
         import torch
@@ -134,6 +136,7 @@ class Seq2SeqGenerator:
                     max_new_tokens=int(max_new_tokens or gen["max_new_tokens"]),
                     no_repeat_ngram_size=int(gen["no_repeat_ngram_size"]),
                     early_stopping=bool(gen.get("early_stopping", True)),
+                    **_length_kwargs(gen, int(max_new_tokens or gen["max_new_tokens"])),
                 )
             for i, text in zip(idx, self.tok.batch_decode(out, skip_special_tokens=True)):
                 preds[i] = text.strip()
@@ -145,6 +148,21 @@ class Seq2SeqGenerator:
         del self.model
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+
+
+def _length_kwargs(gen: dict[str, Any], max_new_tokens: int) -> dict[str, Any]:
+    """min_new_tokens / length_penalty tùy chọn; chỉ truyền khi khác mặc định để giữ nguyên hành vi cũ.
+
+    min_new_tokens bị bỏ khi lần sinh có max_new_tokens nhỏ hơn (vd. tóm tắt chunk ngắn ở mức hierarchical).
+    """
+    out: dict[str, Any] = {}
+    mn = int(gen.get("min_new_tokens") or 0)
+    if 0 < mn < int(max_new_tokens):
+        out["min_new_tokens"] = mn
+    lp = float(gen.get("length_penalty", 1.0))
+    if lp != 1.0 and int(gen["num_beams"]) > 1:
+        out["length_penalty"] = lp
+    return out
 
 
 def generate_seq2seq(texts: Sequence[str], model_path: str, sys_cfg: dict[str, Any], gen: dict[str, Any], token_env: str | None) -> list[str]:

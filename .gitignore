@@ -40,3 +40,6 @@ models/
 
 # Bước B: output của LLM (distillation) — không commit
 data/distill/
+
+# file nén tạm (vd. git archive -o vnsum.zip HEAD)
+*.zip
