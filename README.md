@@ -258,7 +258,7 @@ python -m pytest tests/test_api.py tests/test_inference.py     # trong .venv-onn
 - **Ngoài miền dữ liệu train** (tin tức VietNews, hướng dẫn wikiHow), ví dụ văn bản hành chính dạng danh sách, model thường chỉ chép câu mở đầu — thói quen học từ tin tức, nơi câu đầu thường là tóm tắt tốt.
 - Latency < 500 ms chưa đạt ở cấu hình đã đo (beam 4, batch 1); greedy, mức `short` hay batch lớn hơn chưa được benchmark.
 - Docker image chỉ có bản CPU; GPU (ONNX FP32 nhanh nhất trong benchmark) mới chạy được ngoài Docker.
-- Pipeline hierarchical mới được kiểm tra bằng test với backend giả, chưa đánh giá chất lượng trên model thật.
+- Pipeline hierarchical kiểu cũ (`reduce: generate`, tóm tắt lại bản ghép) kém hơn extractive trên 225 văn bản dài (ROUGE-L 13.48 so với 20.70, `results/long/report.md`) vì nén hai lần. Đã thêm `reduce: concat` (ghép bản tóm tắt chunk, bỏ câu trùng, chọn câu theo ngân sách, không sinh lại; `src/vnsum/inference/reduce.py`) và hệ thống đánh giá `vit5_lora_hier_concat`; mặc định vẫn là `generate` cho tới khi đo trên model thật.
 - Faithfulness của judge chưa được đối chiếu với người chấm (công cụ `scripts/human_eval.py` đã có).
 - API không có xác thực hay giới hạn tần suất request: chỉ dùng cho demo / mạng nội bộ.
 

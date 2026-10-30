@@ -34,6 +34,8 @@ def validate_eval_config(cfg: dict[str, Any]) -> None:
             miss = [k for k in need if k not in (sys_cfg.get("hierarchical") or {})]
             if sys_cfg["type"] != "seq2seq" or miss:
                 raise EvalConfigError(f"systems.{name}: long_strategy hierarchical cần type seq2seq và hierarchical.{need} (thiếu {miss})")
+            if (sys_cfg.get("hierarchical") or {}).get("reduce", "generate") not in ("generate", "concat"):
+                raise EvalConfigError(f"systems.{name}.hierarchical.reduce phải là generate | concat")
         if sys_cfg["type"] == "llm" and sys_cfg.get("client") not in cfg["llm"]:
             raise EvalConfigError(f"systems.{name}.client={sys_cfg.get('client')!r} không có trong mục llm")
     for name, client in cfg["llm"].items():

@@ -206,6 +206,40 @@ def hierarchical_inputs(
     return [t if counter.count(t) <= budget else extract(t) for t in current], rounds
 
 
+def hierarchical_concat_summaries(
+    docs: Sequence[str],
+    generate,
+    counter,
+    *,
+    chunk_max_tokens: int,
+    overlap_tokens: int,
+    chunk_max_new_tokens: int,
+    final_max_tokens: int,
+    select,
+    splitter,
+    dedupe_threshold: float = 0.6,
+) -> list[str]:
+    """Reduce ``concat``: tóm tắt mọi chunk của mọi văn bản trong MỘT lần gọi ``generate`` (batch), rồi
+    ghép + bỏ câu trùng + chọn câu (≤ ``final_max_tokens``) — không sinh lại. Trả bản tóm tắt cuối.
+    ``select(text, max_tokens)`` -> str; ``generate(texts, max_new_tokens)`` -> list[str].
+    """
+    from vnsum.data.long_context import chunk_document
+    from vnsum.inference.reduce import reduce_concat
+
+    owners, chunk_texts = [], []
+    for i, doc in enumerate(docs):
+        for c in chunk_document(doc, counter, chunk_max_tokens=int(chunk_max_tokens),
+                                overlap_tokens=int(overlap_tokens), splitter=splitter):
+            owners.append(i)
+            chunk_texts.append(c.text)
+    parts = generate(chunk_texts, int(chunk_max_new_tokens)) if chunk_texts else []
+    per_doc: list[list[str]] = [[] for _ in docs]
+    for i, part in zip(owners, parts):
+        per_doc[i].append(part)
+    return [reduce_concat(p, splitter=splitter, count_tokens=counter.count, max_tokens=int(final_max_tokens),
+                          select=select, dedupe_threshold=float(dedupe_threshold)) for p in per_doc]
+
+
 def run_hierarchical_seq2seq(df, model_path: str, sys_cfg: dict[str, Any], cfg: dict[str, Any]) -> list[str]:
     """Văn bản dài (``is_long``) -> tóm tắt phân cấp từ document gốc; văn bản ngắn -> ``input_column`` như thường."""
     from vnsum.config import load_config
@@ -223,8 +257,9 @@ def run_hierarchical_seq2seq(df, model_path: str, sys_cfg: dict[str, Any], cfg: 
     try:
         counter = TokenCounter(g.tok, int(data_cfg["tokenizer"].get("reserve_special_tokens", 1)))
 
-        def extract(t: str) -> str:
-            return extractive_filter(t, counter, max_input_tokens=max_in, ranker=ex["ranker"], selection=ex["selection"],
+        def extract(t: str, max_tokens: int | None = None) -> str:
+            limit = max_in if max_tokens is None else int(max_tokens) + counter.reserve_special_tokens
+            return extractive_filter(t, counter, max_input_tokens=limit, ranker=ex["ranker"], selection=ex["selection"],
                                      keep_ratio=float(ex["keep_ratio"]), min_sentences=int(ex["min_sentences"]),
                                      only_if_exceeds=bool(ex["only_if_exceeds"]), ranker_params=dict(ex.get(ex["ranker"], {})),
                                      splitter=splitter).text
@@ -232,6 +267,24 @@ def run_hierarchical_seq2seq(df, model_path: str, sys_cfg: dict[str, Any], cfg: 
         is_long = df["is_long"].astype(bool).tolist()
         inputs = df[sys_cfg["input_column"]].fillna("").tolist()
         long_idx = [k for k, v in enumerate(is_long) if v]
+        if long_idx and h.get("reduce", "generate") == "concat":
+            long_docs = df["document"].fillna("").iloc[long_idx].tolist()
+            summaries = hierarchical_concat_summaries(
+                long_docs, lambda texts, n: g.generate(texts, max_new_tokens=n, desc="hierarchical: chunk"),
+                counter, chunk_max_tokens=int(h["chunk_max_tokens"]), overlap_tokens=int(h["overlap_tokens"]),
+                chunk_max_new_tokens=int(h["chunk_max_new_tokens"]),
+                final_max_tokens=int(h.get("final_max_tokens", cfg["generation"]["max_new_tokens"])),
+                select=extract, splitter=splitter, dedupe_threshold=float(h.get("dedupe_threshold", 0.6)),
+            )
+            short_idx = [k for k, v in enumerate(is_long) if not v]
+            preds = [""] * len(inputs)
+            if short_idx:
+                for k, p in zip(short_idx, g.generate([inputs[k] for k in short_idx], desc="hierarchical: short")):
+                    preds[k] = p
+            for k, p in zip(long_idx, summaries):
+                preds[k] = p
+            logger.info("hierarchical (concat): %d văn bản dài", len(long_idx))
+            return preds
         if long_idx:
             final, rounds = hierarchical_inputs(
                 df["document"].fillna("").iloc[long_idx].tolist(),

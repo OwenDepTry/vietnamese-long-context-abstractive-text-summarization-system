@@ -56,6 +56,10 @@ def validate_inference_config(cfg: dict[str, Any]) -> None:
         raise InferenceConfigError("long_document.overlap_tokens phải nhỏ hơn chunk_max_tokens")
     if int(ld["max_rounds"]) < 1:
         raise InferenceConfigError("long_document.max_rounds phải ≥ 1")
+    if ld.get("reduce", "generate") not in ("generate", "concat"):
+        raise InferenceConfigError("long_document.reduce phải là generate | concat")
+    if not 0.0 < float(ld.get("dedupe_threshold", 0.6)) <= 1.0:
+        raise InferenceConfigError("long_document.dedupe_threshold phải trong (0, 1]")
     if cfg["export"]["quantization"]["isa"] not in QUANT_ISAS:
         raise InferenceConfigError(f"export.quantization.isa phải thuộc {QUANT_ISAS}")
     b = cfg["benchmark"]

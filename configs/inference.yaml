@@ -82,6 +82,14 @@ long_document:
   overlap_tokens: 64
   chunk_length: short          # mức độ dài khi tóm tắt từng chunk
   max_rounds: 3                # gộp bản tóm tắt chunk vẫn quá dài -> chia và tóm tắt tiếp, tối đa số vòng này
+  # Bước reduce sau khi tóm tắt từng chunk (xem src/vnsum/inference/reduce.py):
+  #   generate: ghép rồi cho model tóm tắt lại (cách cũ). Đo trên 225 văn bản dài: ROUGE-L 13.48 so với
+  #             20.70 của extractive, bản cuối chỉ ~16 âm tiết (nén hai lần).
+  #   concat:   ghép + bỏ câu trùng + chọn câu nếu dài hơn max_new_tokens của mức độ dài; không sinh lại.
+  #             Khi dùng concat nên đặt chunk_length: medium (mỗi chunk giữ nhiều ý hơn).
+  # Giữ generate cho tới khi đánh giá vit5_lora_hier_concat (configs/eval.yaml) trên model thật.
+  reduce: generate
+  dedupe_threshold: 0.6        # tỷ lệ bigram âm tiết trùng (containment) để coi hai câu là một
 
 benchmark:
   eval_config: configs/eval.yaml   # lấy tài liệu test giống hệt tập đánh giá phase 3

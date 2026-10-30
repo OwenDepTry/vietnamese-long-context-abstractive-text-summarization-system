@@ -93,6 +93,29 @@ systems:
       chunk_max_new_tokens: 128
       max_rounds: 3
 
+  # Reduce "concat": mỗi chunk tóm tắt 128 token (mức medium), rồi ghép + bỏ câu trùng + chọn câu
+  # ≤ final_max_tokens — không sinh lại lần cuối (bản cũ nén hai lần, xem results/long/report.md).
+  #   python scripts/evaluate.py --config configs/eval.yaml --subset long \
+  #       --systems vit5_lora,vit5_lora_hier,vit5_lora_hier_concat --model_path ... --results_dir results/long
+  vit5_lora_hier_concat:
+    enabled: false
+    type: seq2seq
+    description: "ViT5 + LoRA, văn bản dài: tóm tắt từng chunk, ghép + bỏ câu trùng (không sinh lại)"
+    model_path: null
+    input_column: input_text
+    max_source_length: 1024
+    source_prefix: ""
+    long_strategy: hierarchical
+    hierarchical:
+      data_config: configs/data.yaml
+      chunk_max_tokens: 1024
+      overlap_tokens: 64
+      chunk_max_new_tokens: 128
+      max_rounds: 1                    # concat chỉ có một vòng chia chunk
+      reduce: concat
+      final_max_tokens: 128            # = generation.max_new_tokens, để so độ dài công bằng với vit5_lora
+      dedupe_threshold: 0.6
+
   # Bước mở rộng B: model sau distillation. Chạy riêng, đường dẫn truyền bằng --system_model:
   #   python scripts/evaluate.py --config configs/eval.yaml --systems vit5_lora,vit5_distill \
   #       --model_path C:/vnsum-runs/vit5-vnsum-merged --system_model vit5_distill=C:/vnsum-runs/vit5-vnsum-distill-merged \
@@ -175,7 +198,7 @@ judge:
   # 200 mẫu cũ lấy từ cache. Chi phí judge (Sonnet 4.6, $3/$15 mỗi 1M token) ~ $8 cho 200 mẫu x 4 hệ thống.
   sample_size: 200
   seed: 42
-  systems: [lead3, vit5_lora, vit5_public, llm_zeroshot, vit5_lora_hier, vit5_distill]
+  systems: [lead3, vit5_lora, vit5_public, llm_zeroshot, vit5_lora_hier, vit5_lora_hier_concat, vit5_distill]
   max_document_chars: 30000    # document dài hơn bị cắt (ghi cờ truncated trong cache)
   prompt_version: v1           # đổi khi sửa rubric/prompt -> cache cũ không bị dùng lại
 

@@ -10,8 +10,12 @@ input của model giống hệt lúc train. Văn bản dài được xử lý th
 
 * ``direct``: vừa ``max_input_tokens`` -> đưa thẳng vào model.
 * ``extractive``: chọn câu bằng BM25 tới khi đầy ngân sách token (giống input lúc train / phase 3).
-* ``hierarchical``: chia chunk theo câu (có overlap), tóm tắt từng chunk, ghép các bản tóm tắt rồi
-  tóm tắt lần cuối; nếu bản ghép vẫn quá dài thì lặp lại (tối đa ``max_rounds`` vòng).
+* ``hierarchical``: chia chunk theo câu (có overlap), tóm tắt từng chunk, rồi bước reduce
+  (``long_document.reduce``, xem ``vnsum.inference.reduce``):
+  - ``generate``: ghép các bản tóm tắt rồi tóm tắt lần cuối; nếu bản ghép vẫn quá dài thì lặp lại
+    (tối đa ``max_rounds`` vòng).
+  - ``concat``: ghép các bản tóm tắt, bỏ câu trùng, chọn câu nếu dài hơn ``max_new_tokens`` của mức
+    độ dài được yêu cầu; không sinh thêm lần nào.
 """
 
 from __future__ import annotations
@@ -25,7 +29,8 @@ from typing import Any, Protocol, Sequence
 from vnsum.data.long_context import chunk_document, extractive_filter
 from vnsum.data.preprocess import normalize_text, split_sentences
 from vnsum.data.tokenization import TokenCounter
-from vnsum.inference.config import generation_kwargs, onnx_dirs, resolve_model_path
+from vnsum.inference.config import generation_kwargs, length_preset, onnx_dirs, resolve_model_path
+from vnsum.inference.reduce import reduce_concat
 
 logger = logging.getLogger(__name__)
 
@@ -279,6 +284,8 @@ class Summarizer:
         chunk_summaries: list[str] = []
         calls = 0
 
+        if used == "hierarchical" and self.cfg["long_document"].get("reduce", "generate") == "concat":
+            return self._hierarchical_concat(doc, n_tok, length, t0)
         if used == "hierarchical":
             ld = self.cfg["long_document"]
             current = doc
@@ -310,4 +317,30 @@ class Summarizer:
             model_input_tokens=self.counter.count(model_input) + self.counter.reserve_special_tokens,
             new_tokens=out.new_tokens[0], generate_calls=calls + 1, timings_ms=timings,
             chunk_summaries=chunk_summaries, model_input=model_input,
+        )
+
+    def _hierarchical_concat(self, doc: str, n_tok: int, length: str, t0: float) -> SummaryResult:
+        """Tóm tắt từng chunk một lần, rồi ghép + bỏ câu trùng + chọn câu (không sinh lại)."""
+        ld = self.cfg["long_document"]
+        chunks = chunk_document(doc, self.counter, chunk_max_tokens=int(ld["chunk_max_tokens"]),
+                                overlap_tokens=int(ld["overlap_tokens"]), splitter=self.splitter)
+        t_pre = (time.perf_counter() - t0) * 1000
+        t = time.perf_counter()
+        parts = [self._gen([c.text], ld["chunk_length"]).texts[0] for c in chunks]
+        gen_ms = (time.perf_counter() - t) * 1000
+        max_tokens = int(length_preset(self.cfg, length)["max_new_tokens"])
+        reserve = self.counter.reserve_special_tokens
+        summary = reduce_concat(
+            parts, splitter=self.splitter, count_tokens=self.counter.count, max_tokens=max_tokens,
+            select=lambda text, n: self.extract(text, max_input_tokens=n + reserve),
+            dedupe_threshold=float(ld.get("dedupe_threshold", 0.6)),
+        )
+        joined = " ".join(p for p in parts if p)
+        timings = {"preprocess_ms": t_pre, "generate_chunks_ms": gen_ms, "generate_ms": 0.0,
+                   "total_ms": (time.perf_counter() - t0) * 1000}
+        return SummaryResult(
+            summary=summary, length=length, strategy="hierarchical", input_tokens=n_tok,
+            model_input_tokens=max((self.counter.count(c.text) + reserve for c in chunks), default=0),
+            new_tokens=self.counter.count(summary), generate_calls=len(chunks), timings_ms=timings,
+            chunk_summaries=parts, model_input=joined,
         )
