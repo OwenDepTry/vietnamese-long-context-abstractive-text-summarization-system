@@ -48,8 +48,7 @@ llm:
   timeout_seconds: 120
   max_retries: 5
   prompt: |
-    Tóm tắt văn bản tiếng Việt dưới đây trong 2–4 câu, tổng cộng không quá 60 từ.
-    Yêu cầu:
+    Tóm tắt văn bản tiếng Việt dưới đây trong 1–2 câu, tổng cộng khoảng 30–40 tiếng (âm tiết). Không vượt quá 45 tiếng.
     - Bao quát các ý chính của TOÀN BỘ văn bản, không chỉ phần mở đầu.
     - Diễn đạt lại bằng lời của bạn, nhưng giữ đúng tên riêng, số liệu, thời gian, địa điểm.
     - Chỉ dùng thông tin có trong văn bản; không suy đoán, không bình luận, không thêm kiến thức bên ngoài.
