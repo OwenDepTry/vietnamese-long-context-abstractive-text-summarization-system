@@ -1,51 +1,51 @@
 ﻿item_id,human_score,human_notes
-H001,,
-H002,,
-H003,,
-H004,,
-H005,,
-H006,,
-H007,,
-H008,,
-H009,,
-H010,,
-H011,,
-H012,,
-H013,,
-H014,,
-H015,,
-H016,,
-H017,,
-H018,,
-H019,,
-H020,,
-H021,,
-H022,,
-H023,,
-H024,,
-H025,,
-H026,,
-H027,,
-H028,,
-H029,,
-H030,,
-H031,,
-H032,,
-H033,,
-H034,,
-H035,,
-H036,,
-H037,,
-H038,,
-H039,,
-H040,,
-H041,,
-H042,,
-H043,,
-H044,,
-H045,,
-H046,,
-H047,,
-H048,,
-H049,,
-H050,,
+H001,1,Sai lệch sự thật nghiêm trọng: tóm tắt đổi ngược chủ thể và gán sai hành động (biến người nhận lời bình thành người đưa ra bình luận).
+H002,2,Có sai lệch: chi tiết "khởi động lại máy tính" không liên quan đến thao tác nhập mật khẩu trong Terminal ở ngữ cảnh này.
+H003,5,Hoàn toàn trung thực: phản ánh chính xác nội dung chính của văn bản gốc.
+H004,5,Hoàn toàn trung thực: phản ánh đúng phát biểu của ông Đặng Phong được nêu trong văn bản gốc.
+H005,5,Hoàn toàn trung thực: các ý tóm tắt đều được rút ra trực tiếp từ văn bản gốc.
+H006,5,Hoàn toàn trung thực: tóm tắt đầy đủ chính xác các điểm chính về chế độ dinh dưỡng cho người tập thể hình.
+H007,3,Có thông tin không kiểm chứng được/diễn đạt lan man: vế sau kết luận "là những điều tuyệt vời" không bám sát văn bản gốc.
+H008,5,Hoàn toàn trung thực: tóm tắt đúng các ý chính về cách tán tỉnh qua mạng.
+H009,2,Có sai lệch/thông tin chung chung không phản ánh đúng hướng dẫn cụ thể từng bước chi tiết trong văn bản gốc.
+H010,5,Hoàn toàn trung thực: phản ánh chính xác sự việc máy bay rơi được nêu trong văn bản.
+H011,5,Hoàn toàn trung thực: tóm tắt chính xác nhận định của Tổng cục Du lịch về tốc độ tăng trưởng khách quốc tế.
+H012,4,Gần như trung thực: suy luận ý chính về thông điệp của Mỹ nhưng có gộp thêm chi tiết kiềm chế Triều Tiên (vốn được nhắc ở đoạn khác làm bối cảnh).
+H013,5,Hoàn toàn trung thực: tóm tắt đúng các bước làm sạch bên ngoài và đánh bóng ấm đun nước.
+H014,5,Hoàn toàn trung thực: phản ánh đúng các lời khuyên giao tiếp và cười trong văn bản.
+H015,5,Hoàn toàn trung thực: tóm tắt chuẩn xác các nguyên tắc và bước đặt mục tiêu ngắn hạn.
+H016,5,Hoàn toàn trung thực: tóm tắt đầy đủ và chính xác thông tin về vụ cháy và nghi phạm.
+H017,5,Hoàn toàn trung thực: phản ánh chính xác trang phục xuất hiện tại tòa của ông Đặng Lê Nguyên Vũ.
+H018,4,Gần như trung thực: diễn đạt hơi khái quát quá so với việc mỉm cười giải phóng hóa chất/xoa dịu trầm cảm trong văn bản gốc.
+H019,5,Hoàn toàn trung thực: tóm tắt chính xác các hướng dẫn về nước uống thức ăn và đồ chơi cho thỏ.
+H020,5,Hoàn toàn trung thực: tóm tắt đúng sự cố nhiễu động của máy bay A380 hãng Qantas.
+H021,5,Hoàn toàn trung thực: tóm tắt chính xác các bước thay đổi kích thước artboard trong Illustrator.
+H022,2,Có sai lệch: văn bản gốc nói về người di cư từ Trung Mỹ/Mỹ Latinh bản tóm tắt lại nhầm thành "từ Trung Đông".
+H023,2,Có sai lệch: văn bản gốc nêu đám cháy được khống chế lúc 0h55 (không phải 0h30).
+H024,5,Hoàn toàn trung thực: tóm tắt chính xác các bước chuẩn bị và làm đất trồng rau.
+H025,5,Hoàn toàn trung thực: tóm tắt đầy đủ các số liệu và giải pháp tài chính liên quan đến bức tường biên giới.
+H026,5,Hoàn toàn trung thực: tóm tắt đúng câu chuyện đoàn tụ cảm động của ông Đỗ Phát Hùng.
+H027,4,Gần như trung thực: PGS-TS Trần Đình Thiên là Viện trưởng Viện Kinh tế Việt Nam (hoặc chức danh tương đương) văn bản không nêu cụ thể chức vụ "Phó Chủ tịch chuyên trách Uỷ ban Kinh tế Trung ương".
+H028,3,Có thông tin không kiểm chứng được/lạc đề ở câu đầu ("Những ngày qua...").
+H029,5,Hoàn toàn trung thực: tóm tắt đúng bản chất và mục đích của các thủ thuật điều trị đau dây thần kinh chia ba.
+H030,5,Hoàn toàn trung thực: phản ánh chính xác câu chuyện và thông điệp truyền cảm hứng từ cụ bà Mastanamma.
+H031,5,Hoàn toàn trung thực: tóm tắt chuẩn xác các phương án chẩn đoán và điều trị đau vai.
+H032,5,Hoàn toàn trung thực: tóm tắt đúng các bước gửi video qua iCloud Mail và tính năng Mail Drop.
+H033,5,Hoàn toàn trung thực: tóm tắt chính xác nội dung kỳ họp HĐND TP.HCM ngày 21/4.
+H034,5,Hoàn toàn trung thực: tóm tắt đúng nhận định của chuyên gia về việc Việt Nam tham gia HĐBA.
+H035,5,Hoàn toàn trung thực: liệt kê đúng các phương pháp và thảo dược phòng ngừa đau nửa đầu nêu trong bài.
+H036,5,Hoàn toàn trung thực: tóm tắt chính xác thông tin về vụ đánh bom tại Pakistan và phản ứng của giới chức.
+H037,5,Hoàn toàn trung thực: tóm tắt đầy đủ triệu chứng và các cách xử lý vết ngứa do cây tầm ma.
+H038,5,Hoàn toàn trung thực: tóm tắt chính xác thông tin ông Võ Quang Huệ rời Bosch.
+H039,2,Có sai lệch: cụm từ "quyết tâm dân chủ" mâu thuẫn/sai lệch hoàn toàn với bản chất nội dung gốc bàn về việc tập trung quyền lực và kéo dài nhiệm kỳ.
+H040,5,Hoàn toàn trung thực: tóm tắt đầy đủ chính xác các nội dung của kỳ họp HĐND TP.HCM.
+H041,5,Hoàn toàn trung thực: tóm tắt đúng các thói quen giúp xây dựng sự tự tin và sống trong hiện tại.
+H042,5,Hoàn toàn trung thực: tóm tắt chính xác các cuộc thử nghiệm vũ khí của Pakistan và Ấn Độ trong bối cảnh căng thẳng.
+H043,5,Hoàn toàn trung thực: trích dẫn đúng chia sẻ của người mẫu Hoàng Thùy về việc thi HHHV VN 2017.
+H044,5,Hoàn toàn trung thực: tóm tắt đúng thực trạng hư hỏng mặt đường cao tốc Đà Nẵng - Quảng Ngãi.
+H045,5,Hoàn toàn trung thực: phản ánh đúng thông tin về dự án Khu đô thị sinh thái Bình Quới - Thanh Đa.
+H046,5,Hoàn toàn trung thực: tóm tắt đúng tỷ lệ sai phạm về công tác cán bộ trong kết luận của Ủy ban Kiểm tra Trung ương.
+H047,1,Sai lệch sự thật nghiêm trọng: bịa ra thông tin làm việc trên Microsoft Word thay vì Excel cho máy Mac.
+H048,5,Hoàn toàn trung thực: tóm tắt chính xác tình trạng nguy hiểm cấp D và kế hoạch di dời chung cư 128 Hai Bà Trưng.
+H049,5,Hoàn toàn trung thực: tóm tắt đúng các bước trò chuyện và thổ lộ tình cảm với người yêu cũ.
+H050,5,Hoàn toàn trung thực: tóm tắt đầy đủ và mạch lạc các bước lập ngân sách cắt giảm chi phí và duy trì quỹ khẩn cấp.
