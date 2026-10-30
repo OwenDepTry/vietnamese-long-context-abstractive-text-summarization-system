@@ -76,19 +76,22 @@ max_input_tokens: 1024         # tính cả special token, bằng max_source_len
 long_document:
   # auto: vừa max_input_tokens -> đưa thẳng; dài hơn nhưng ≤ hierarchical_above_tokens -> extractive filter
   #       (giống lúc train); dài hơn nữa -> hierarchical.
+  # 1024: mọi văn bản vượt ngữ cảnh đều đi hierarchical (reduce concat). Đo trên 225 văn bản > 1024 token
+  # (results/long/report.md): ROUGE-L 22.25 so với 20.70 của extractive, có ý nghĩa (p = 0.002).
+  # Đổi lại mỗi văn bản cần 2–4 lần sinh thay vì 1; đặt lại 3072 nếu cần latency thấp.
   strategy: auto               # auto | extractive | hierarchical
-  hierarchical_above_tokens: 3072
+  hierarchical_above_tokens: 1024
   chunk_max_tokens: 1024       # mỗi chunk tóm tắt riêng (tính cả special token)
   overlap_tokens: 64
-  chunk_length: short          # mức độ dài khi tóm tắt từng chunk
+  chunk_length: medium         # mức độ dài khi tóm tắt từng chunk (concat: medium = 128 token như lúc đánh giá)
   max_rounds: 3                # gộp bản tóm tắt chunk vẫn quá dài -> chia và tóm tắt tiếp, tối đa số vòng này
   # Bước reduce sau khi tóm tắt từng chunk (xem src/vnsum/inference/reduce.py):
   #   generate: ghép rồi cho model tóm tắt lại (cách cũ). Đo trên 225 văn bản dài: ROUGE-L 13.48 so với
   #             20.70 của extractive, bản cuối chỉ ~16 âm tiết (nén hai lần).
   #   concat:   ghép + bỏ câu trùng + chọn câu nếu dài hơn max_new_tokens của mức độ dài; không sinh lại.
   #             Khi dùng concat nên đặt chunk_length: medium (mỗi chunk giữ nhiều ý hơn).
-  # Giữ generate cho tới khi đánh giá vit5_lora_hier_concat (configs/eval.yaml) trên model thật.
-  reduce: generate
+  # Đo trên 225 văn bản dài (results/long/report.md, ROUGE-L): concat 22.25, extractive 20.70, generate 13.48.
+  reduce: concat
   dedupe_threshold: 0.6        # tỷ lệ bigram âm tiết trùng (containment) để coi hai câu là một
 
 benchmark:
