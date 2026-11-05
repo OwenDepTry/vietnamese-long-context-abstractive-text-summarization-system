@@ -22,12 +22,19 @@ import pandas as pd
 from vnsum.eval.judge import RUBRIC
 
 SCORES = (1, 2, 3, 4, 5)
-SHEET_COLUMNS = ["item_id", "human_score", "human_notes"]
+SHEET_COLUMNS = ["item_id", "human_score", "human_coverage", "human_notes"]
+
+# Độ đầy đủ (chỉ khi export --coverage): tách khỏi độ trung thực, vì bản tóm tắt đúng sự thật vẫn có thể bỏ mất ý chính.
+COVERAGE_RUBRIC = """5 — Đầy đủ: nêu đủ các ý chính của văn bản gốc.
+4 — Gần đủ: đủ các ý chính, thiếu một vài ý phụ.
+3 — Thiếu: bỏ sót ít nhất một ý chính nhưng vẫn nắm đúng chủ đề.
+2 — Thiếu nhiều: chỉ nêu một phần nhỏ, bỏ sót phần lớn ý chính.
+1 — Không phản ánh nội dung chính của văn bản (lạc đề, chỉ có chi tiết vụn)."""
 
 
 # --------------------------------------------------------------------------- export
 def select_items(per_sample: pd.DataFrame, systems: list[str], n_items: int, seed: int,
-                 paired: bool = False) -> pd.DataFrame:
+                 paired: bool = False, require_judge: bool = True) -> pd.DataFrame:
     """Chia đều n_items cho các hệ thống (phần dư cho hệ thống đứng đầu danh sách), chỉ lấy mẫu có điểm judge.
 
     ``paired``: mọi hệ thống được chấm trên CÙNG các văn bản (n_items // số hệ thống văn bản; phần dư bỏ).
@@ -35,11 +42,17 @@ def select_items(per_sample: pd.DataFrame, systems: list[str], n_items: int, see
     Lấy ngẫu nhiên theo seed, không phụ thuộc thứ tự dòng đầu vào; thứ tự trình bày được trộn
     lẫn giữa các hệ thống để người chấm không đoán được hệ thống.
     """
-    judged = per_sample.dropna(subset=["faithfulness"])
+    if require_judge:
+        judged = per_sample.dropna(subset=["faithfulness"]) if "faithfulness" in per_sample else per_sample.head(0)
+    else:
+        # Chấm độc lập TRƯỚC judge: mọi mẫu có dự đoán; điểm judge (nếu có) chỉ dùng để đối chiếu sau.
+        judged = per_sample[per_sample["prediction"].fillna("").astype(str).str.strip() != ""]
     judged = judged[judged["system"].isin(systems)]
     missing = [s for s in systems if s not in set(judged["system"])]
     if missing:
-        raise ValueError(f"Không có mẫu đã được judge chấm cho: {missing}. Chạy evaluate.py (có judge) trước.")
+        hint = ("Chạy evaluate.py (có judge) trước, hoặc dùng --unjudged để chấm độc lập."
+                if require_judge else "Hệ thống chưa có dự đoán trong per_sample.csv.")
+        raise ValueError(f"Không có mẫu {'đã được judge chấm ' if require_judge else ''}cho: {missing}. {hint}")
     base, extra = divmod(int(n_items), len(systems))
     rng = random.Random(int(seed))
     picked = []
@@ -65,13 +78,14 @@ def select_items(per_sample: pd.DataFrame, systems: list[str], n_items: int, see
     for n, (system, i) in enumerate(picked, 1):
         r = idx.loc[(system, i)]
         rows.append({"item_id": f"H{n:03d}", "system": system, "id": i, "dataset": r.get("dataset"),
-                     "prediction": r["prediction"], "judge_score": int(r["faithfulness"]),
+                     "prediction": r["prediction"],
+                     "judge_score": int(r["faithfulness"]) if pd.notna(r.get("faithfulness")) else None,
                      "judge_rationale": r.get("judge_rationale")})
     return pd.DataFrame(rows)
 
 
 def export_items(items: pd.DataFrame, documents: pd.Series, out_dir: Path, max_document_chars: int,
-                 *, force: bool = False) -> dict[str, Path]:
+                 *, force: bool = False, coverage: bool = False) -> dict[str, Path]:
     """Ghi items.md, annotation_sheet.csv, key.csv. Không ghi đè bảng điểm đã có trừ khi force=True."""
     out_dir = Path(out_dir)
     sheet_path = out_dir / "annotation_sheet.csv"
@@ -93,6 +107,11 @@ def export_items(items: pd.DataFrame, documents: pd.Series, out_dir: Path, max_d
         "",
         *[f"- {line}" for line in RUBRIC.splitlines()],
     ]
+    if coverage:
+        lines[0] = "# Chấm độ trung thực và độ đầy đủ — bản tóm tắt so với văn bản gốc"
+        lines += ["", "## Độ đầy đủ (cột `human_coverage`, chấm RIÊNG với độ trung thực)", "",
+                  *[f"- {line}" for line in COVERAGE_RUBRIC.splitlines()], "",
+                  "Chấm hai điểm độc lập: bản tóm tắt ngắn mà đúng có thể trung thực 5 nhưng đầy đủ 2."]
     for _, it in items.iterrows():
         doc = str(documents[it["id"]])
         truncated = len(doc) > int(max_document_chars)
@@ -101,11 +120,14 @@ def export_items(items: pd.DataFrame, documents: pd.Series, out_dir: Path, max_d
                   + (f" (cắt còn {int(max_document_chars):,} ký tự đầu, như judge thấy)" if truncated else "") + ":", "",
                   *[f"> {p}" if p.strip() else ">" for p in doc.splitlines()], "",
                   "**Bản tóm tắt cần chấm:**", "", f"> {it['prediction']}", "",
-                  f"Điểm của bạn ({it['item_id']}): ___"]
+                  f"Điểm của bạn ({it['item_id']}): ___" + (" · Độ đầy đủ: ___" if coverage else "")]
     paths = {"items": out_dir / "items.md", "sheet": sheet_path, "key": out_dir / "key.csv"}
     paths["items"].write_text("\n".join(lines) + "\n", encoding="utf-8")
-    pd.DataFrame({"item_id": items["item_id"], "human_score": "", "human_notes": ""}).to_csv(
-        sheet_path, index=False, encoding="utf-8-sig")
+    sheet = {"item_id": items["item_id"], "human_score": ""}
+    if coverage:
+        sheet["human_coverage"] = ""
+    sheet["human_notes"] = ""
+    pd.DataFrame(sheet).to_csv(sheet_path, index=False, encoding="utf-8-sig")
     items[["item_id", "system", "id", "dataset", "judge_score", "judge_rationale"]].to_csv(
         paths["key"], index=False, encoding="utf-8-sig")
     return paths
@@ -118,11 +140,14 @@ def read_sheet(path: Path) -> pd.DataFrame:
     df.columns = [str(c).strip() for c in df.columns]
     if "item_id" not in df.columns or "human_score" not in df.columns:
         raise ValueError(f"{path} phải có cột item_id và human_score (đang có {list(df.columns)})")
-    score = pd.to_numeric(df["human_score"], errors="coerce")
-    bad = df.loc[score.notna() & ~score.isin(SCORES), "item_id"].tolist()
-    if bad:
-        raise ValueError(f"human_score phải là số nguyên 1–5; sai ở: {bad}")
-    df["human_score"] = score
+    for col in ("human_score", "human_coverage"):
+        if col not in df.columns:
+            continue
+        score = pd.to_numeric(df[col], errors="coerce")
+        bad = df.loc[score.notna() & ~score.isin(SCORES), "item_id"].tolist()
+        if bad:
+            raise ValueError(f"{col} phải là số nguyên 1–5; sai ở: {bad}")
+        df[col] = score
     return df
 
 
@@ -196,10 +221,17 @@ def analyze(sheet: pd.DataFrame, key: pd.DataFrame, cfg: dict[str, Any] | None =
 
     key = key.assign(item_id=key["item_id"].astype(str))
     merged = key.merge(sheet[[c for c in SHEET_COLUMNS if c in sheet.columns]], on="item_id", how="left")
-    scored = merged.dropna(subset=["human_score"]).copy()
-    scored["human_score"] = scored["human_score"].astype(int)
-    scored["judge_score"] = scored["judge_score"].astype(int)
+    scored_all = merged.dropna(subset=["human_score"]).copy()
+    scored_all["human_score"] = scored_all["human_score"].astype(int)
     name = (lambda s: display_name(cfg, s)) if cfg else (lambda s: s)
+    human_lines = human_only_section(scored_all, name)
+    scored = scored_all[pd.to_numeric(scored_all["judge_score"], errors="coerce").notna()].copy()
+    scored["judge_score"] = scored["judge_score"].astype(float).astype(int)
+    if len(scored_all) and scored.empty:
+        lines = ["# Kết quả người chấm", "",
+                 f"Đã chấm {len(scored_all)}/{len(merged)} mục, chấm mù (không biết tên hệ thống). Các mục này chưa có "
+                 "điểm judge nên chưa tính đồng thuận người–judge.", ""]
+        return "\n".join(lines + human_lines) + "\n", merged
 
     st = agreement_stats(scored["human_score"].to_numpy(), scored["judge_score"].to_numpy())
     lines = ["# Đối chiếu LLM judge với người chấm", "",
@@ -245,4 +277,38 @@ def analyze(sheet: pd.DataFrame, key: pd.DataFrame, cfg: dict[str, Any] | None =
               *(["- Lead-3 không có trong mẫu: trích nguyên văn nên judge luôn chấm 5, không cho thông tin về độ tin cậy."]
                 if "lead3" not in set(key["system"]) else []),
               "- Mẫu lấy đều theo hệ thống (không theo tỷ lệ điểm), nên % trùng khớp phụ thuộc phân bố điểm của từng hệ thống."]
+    if len(scored) < len(scored_all) or "human_coverage" in scored_all:
+        lines += [""] + human_lines
     return "\n".join(lines) + "\n", merged
+
+
+def human_only_section(scored: pd.DataFrame, name=lambda s: s, n_boot: int = 1000, seed: int = 42) -> list[str]:
+    """Điểm người theo hệ thống (độ trung thực, độ đầy đủ nếu có) và so sánh cặp trên cùng văn bản."""
+    from vnsum.eval.stats import paired_bootstrap
+
+    if scored.empty:
+        return ["Chưa có mục nào được chấm — điền cột `human_score` trong annotation_sheet.csv rồi chạy lại."]
+    has_cov = "human_coverage" in scored and scored["human_coverage"].notna().any()
+    metrics = [("human_score", "Trung thực")] + ([("human_coverage", "Đầy đủ")] if has_cov else [])
+    lines = ["## Điểm người chấm theo hệ thống", "",
+             "| Hệ thống | n | " + " | ".join(f"{t} TB" for _, t in metrics) + " |", "|---|---:|" + "---:|" * len(metrics)]
+    for system, g in scored.groupby("system", sort=True):
+        lines.append(f"| {name(system)} | {len(g)} | " + " | ".join(
+            f"{pd.to_numeric(g[c], errors='coerce').mean():.2f}" for c, _ in metrics) + " |")
+    systems = sorted(scored["system"].unique())
+    if len(systems) >= 2:
+        wide = {c: scored.pivot_table(index="id", columns="system", values=c, aggfunc="first") for c, _ in metrics}
+        lines += ["", "## So sánh cặp trên cùng văn bản (paired bootstrap)", "",
+                  "| So sánh | Chỉ số | n văn bản | Hiệu | CI 95% | p |", "|---|---|---:|---:|---|---:|"]
+        base = systems[0]
+        for other in systems[1:]:
+            for c, title in metrics:
+                w = wide[c][[base, other]].dropna() if {base, other} <= set(wide[c].columns) else pd.DataFrame()
+                if len(w) < 2:
+                    continue
+                r = paired_bootstrap(w[other].to_numpy(), w[base].to_numpy(), n_boot, 0.95, seed)
+                p = "< 0.001" if r["p_value"] < 0.001 else f"{r['p_value']:.3f}"
+                lines.append(f"| {name(other)} − {name(base)} | {title} | {r['n']} | {r['diff']:+.2f} | "
+                             f"[{r['ci_low']:+.2f}, {r['ci_high']:+.2f}] | {p} |")
+        lines += ["", "Chỉ tính trên văn bản mà cả hai hệ thống đều đã được chấm (export với `--paired`)."]
+    return lines

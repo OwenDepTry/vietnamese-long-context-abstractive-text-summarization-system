@@ -34,6 +34,9 @@ def parse_args(argv=None):
     p.add_argument("--systems", default=None, help="export: ghi đè human_eval.systems, phân cách dấu phẩy")
     p.add_argument("--n_items", type=int, default=None, help="export: ghi đè human_eval.n_items")
     p.add_argument("--paired", action="store_true", help="export: mọi hệ thống chấm trên cùng các văn bản")
+    p.add_argument("--unjudged", action="store_true",
+                   help="export: lấy cả mẫu CHƯA có điểm judge (chấm độc lập trước, đối chiếu judge sau)")
+    p.add_argument("--coverage", action="store_true", help="export: thêm cột chấm độ đầy đủ (human_coverage)")
     return p.parse_args(argv)
 
 
@@ -58,11 +61,12 @@ def main(argv=None) -> int:
         systems = ([x.strip() for x in args.systems.split(",")] if args.systems
                    else list(hcfg.get("systems", ["vit5_lora", "vit5_public", "llm_zeroshot"])))
         items = select_items(per_sample, systems, int(args.n_items or hcfg.get("n_items", 50)),
-                             int(hcfg.get("seed", 42)), paired=args.paired)
+                             int(hcfg.get("seed", 42)), paired=args.paired, require_judge=not args.unjudged)
         eval_df = load_eval_set(cfg)
         docs = eval_df.assign(id=eval_df["id"].astype(str)).set_index("id")["document"]
         try:
-            paths = export_items(items, docs, out_dir, int(cfg["judge"]["max_document_chars"]), force=args.force)
+            paths = export_items(items, docs, out_dir, int(cfg["judge"]["max_document_chars"]), force=args.force,
+                                 coverage=args.coverage)
         except FileExistsError as err:
             print(err)
             return 1

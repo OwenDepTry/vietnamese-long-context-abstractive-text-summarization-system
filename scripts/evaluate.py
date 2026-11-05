@@ -114,7 +114,7 @@ def main(argv=None) -> int:
         if (wanted and name not in wanted) or (not wanted and not sys_cfg.get("enabled", True)):
             continue
         model_path = None
-        if sys_cfg["type"] == "seq2seq":
+        if sys_cfg["type"] in ("seq2seq", "pipeline"):
             uses_lora = not sys_cfg.get("model_path")   # model_path null -> model đã merge của phase 2
             if name in per_system:
                 model_path = per_system[name]

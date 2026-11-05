@@ -139,6 +139,22 @@ systems:
       final_max_tokens: 128
       dedupe_threshold: 0.6
 
+  # ĐÚNG đường xử lý của API: Summarizer + configs/inference.yaml (chuẩn hóa, chọn chiến lược, sinh chunk theo
+  # long_document.chunk_batch_size TRONG từng văn bản, reduce concat), trên văn bản gốc, từng văn bản như request.
+  # Các hệ thống seq2seq ở trên dùng input đã lọc sẵn và batch gom nhiều văn bản; hệ thống này kiểm tra cái người
+  # dùng thật sự nhận được. Mức medium = 128 token, cùng generation với các hệ thống trên.
+  #   python scripts/evaluate.py --config configs/eval.yaml --subset long --systems vit5_lora_hier_concat,vit5_lora_api ...
+  vit5_lora_api:
+    enabled: false
+    type: pipeline
+    description: "Đường xử lý của API (Summarizer + configs/inference.yaml, mức medium) trên văn bản gốc"
+    model_path: null
+    input_column: document
+    inference_config: configs/inference.yaml
+    backend: pytorch                 # pytorch | onnx (onnx cần .venv-onnx)
+    length: medium
+    # long_document: {chunk_batch_size: 1}   # override tùy chọn để đối chứng
+
   # Bước 2: cùng model, tham số độ dài đã tune trên VALIDATION (scripts/tune_lengths.py ->
   # results/tune_lengths.md: +0.23 ROUGE-L, không dùng). Nay dùng làm ĐỐI CHỨNG ĐỘ DÀI cho văn bản dài: ép
   # extractive viết dài (min 64 token ≈ 60 âm tiết) để so với concat ở độ dài tương đương
@@ -239,7 +255,7 @@ judge:
   # 200 mẫu cũ lấy từ cache. Chi phí judge (Sonnet 4.6, $3/$15 mỗi 1M token) ~ $8 cho 200 mẫu x 4 hệ thống.
   sample_size: 200
   seed: 42
-  systems: [lead3, vit5_lora, vit5_public, llm_zeroshot, vit5_lora_hier, vit5_lora_hier_concat, vit5_lora_hier_concat_b1, vit5_distill]
+  systems: [lead3, vit5_lora, vit5_public, llm_zeroshot, vit5_lora_hier, vit5_lora_hier_concat, vit5_lora_hier_concat_b1, vit5_lora_api, vit5_distill]
   max_document_chars: 30000    # document dài hơn bị cắt (ghi cờ truncated trong cache)
   prompt_version: v1           # đổi khi sửa rubric/prompt -> cache cũ không bị dùng lại
 

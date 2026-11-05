@@ -574,3 +574,48 @@ def test_human_eval_paired_uses_same_documents():
     assert items["system"].tolist() != sorted(items["system"].tolist())  # thứ tự trình bày vẫn trộn
     with pytest.raises(ValueError):
         select_items(ps, ["vit5_lora", "vit5_public"], 60, 42, paired=True)
+
+
+def test_human_eval_unjudged_paired_with_coverage(tmp_path):
+    # Review lần 3: long_v2 chưa có điểm judge -> trước đây không xuất được bộ chấm concat–extractive.
+    pd = pytest.importorskip("pandas")
+    from vnsum.eval.human_eval import analyze, export_items, read_sheet, select_items
+
+    ps = _human_per_sample(pd)
+    ps["faithfulness"] = None                                            # chưa chạy judge
+    systems = ["vit5_lora", "vit5_public"]
+    with pytest.raises(ValueError, match="--unjudged"):
+        select_items(ps, systems, 20, 42, paired=True)
+    items = select_items(ps, systems, 20, 42, paired=True, require_judge=False)
+    assert len(items) == 20 and items["judge_score"].isna().all()
+    docs = pd.Series({f"d{k}": f"Văn bản gốc số {k}." for k in range(30)})
+    paths = export_items(items, docs, tmp_path, 1000, coverage=True)
+    text = paths["items"].read_text(encoding="utf-8")
+    assert "độ đầy đủ" in text.lower() and "Độ đầy đủ: ___" in text
+    sheet = read_sheet(paths["sheet"])
+    assert list(sheet.columns) == ["item_id", "human_score", "human_coverage", "human_notes"]
+
+    key = pd.read_csv(paths["key"], encoding="utf-8-sig", dtype={"item_id": str, "id": str})
+    # Người chấm: vit5_public trung thực như nhau nhưng đầy đủ hơn 1 điểm trên mọi văn bản.
+    sys_of = dict(zip(key["item_id"], key["system"]))
+    sheet["human_score"] = 4
+    sheet["human_coverage"] = [4 if sys_of[i] == "vit5_public" else 3 for i in sheet["item_id"]]
+    report, _ = analyze(sheet, key)
+    assert report.startswith("# Kết quả người chấm") and "chưa có điểm judge" in report
+    assert "| vit5_public − vit5_lora | Đầy đủ | 10 | +1.00 |" in report
+    assert "| vit5_public − vit5_lora | Trung thực | 10 | +0.00 |" in report
+
+
+def test_human_eval_unjudged_on_real_long_v2():
+    pd = pytest.importorskip("pandas")
+    from pathlib import Path
+
+    from vnsum.eval.human_eval import select_items
+
+    path = Path(__file__).resolve().parents[1] / "results" / "long_v2" / "per_sample.csv"
+    if not path.exists():
+        pytest.skip("chưa có results/long_v2")
+    ps = pd.read_csv(path, encoding="utf-8-sig", dtype={"id": str})
+    items = select_items(ps, ["vit5_lora", "vit5_lora_hier_concat"], 40, 42, paired=True, require_judge=False)
+    ids = items.groupby("system")["id"].apply(frozenset)
+    assert len(items) == 40 and ids["vit5_lora"] == ids["vit5_lora_hier_concat"] and len(ids["vit5_lora"]) == 20

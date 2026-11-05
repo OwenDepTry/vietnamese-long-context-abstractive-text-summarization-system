@@ -7,7 +7,7 @@ from typing import Any
 
 import yaml
 
-SYSTEM_TYPES = ("lead", "seq2seq", "llm")
+SYSTEM_TYPES = ("lead", "seq2seq", "llm", "pipeline")
 PROVIDERS = ("anthropic", "openai_compatible")
 _REQUIRED = ("seed", "paths", "eval_set", "generation", "systems", "llm", "judge", "bertscore", "aux_metrics", "qualitative")
 
@@ -36,6 +36,8 @@ def validate_eval_config(cfg: dict[str, Any]) -> None:
                 raise EvalConfigError(f"systems.{name}: long_strategy hierarchical cần type seq2seq và hierarchical.{need} (thiếu {miss})")
             if (sys_cfg.get("hierarchical") or {}).get("reduce", "generate") not in ("generate", "concat"):
                 raise EvalConfigError(f"systems.{name}.hierarchical.reduce phải là generate | concat")
+        if sys_cfg["type"] == "pipeline" and not sys_cfg.get("inference_config"):
+            raise EvalConfigError(f"systems.{name}: type pipeline cần inference_config (vd. configs/inference.yaml)")
         if sys_cfg["type"] == "llm" and sys_cfg.get("client") not in cfg["llm"]:
             raise EvalConfigError(f"systems.{name}.client={sys_cfg.get('client')!r} không có trong mục llm")
     for name, client in cfg["llm"].items():

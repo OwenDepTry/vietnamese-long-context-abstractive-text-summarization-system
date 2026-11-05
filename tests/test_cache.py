@@ -114,3 +114,25 @@ def test_run_info_never_breaks_evaluation(tmp_path, monkeypatch):
     monkeypatch.setattr(ri, "git_state", boom)
     out = ri.write_run_info(tmp_path / "run_info.json", argv=[], cfg={}, systems={}, n_samples=0)
     assert "AttributeError" in json.loads(out.read_text(encoding="utf-8"))["git"]["error"]
+
+
+def test_cache_key_includes_batch_size(tmp_path, monkeypatch):
+    # Review lần 3: đổi batch_size chung (cùng hệ thống, input, checkpoint) từng trả lại output của batch cũ.
+    import vnsum.eval.systems as systems
+
+    calls = []
+
+    def fake_generate(texts, model_path, sys_cfg, gen, token_env):
+        bs = systems.effective_generation({"generation": gen}, sys_cfg)["batch_size"]
+        calls.append(bs)
+        return [f"batch {bs}"] * len(texts)
+
+    monkeypatch.setattr(systems, "generate_seq2seq", fake_generate)
+    sys_cfg = {"type": "seq2seq", "input_column": "input_text"}
+    df = pd.DataFrame({"id": ["a"], "input_text": ["văn bản"]})
+    kw = dict(results_dir=tmp_path, gate=ApiGate(allowed=False), model_path="VietAI/x")
+    gen = {"num_beams": 4, "max_new_tokens": 128}
+    assert run_system("s", sys_cfg, df, {"generation": {**gen, "batch_size": 8}}, **kw) == {"a": "batch 8"}
+    assert run_system("s", sys_cfg, df, {"generation": {**gen, "batch_size": 4}}, **kw) == {"a": "batch 4"}
+    assert run_system("s", sys_cfg, df, {"generation": {**gen, "batch_size": 8}}, **kw) == {"a": "batch 8"}
+    assert calls == [8, 4]                                      # batch 8 lần hai lấy từ cache, đúng output của nó

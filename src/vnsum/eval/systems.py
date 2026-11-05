@@ -140,7 +140,7 @@ class Seq2SeqGenerator:
         self.name = Path(str(model_path)).name
         # sys_cfg.generation (tùy chọn) ghi đè generation chung cho riêng hệ thống này, vd. tham số độ dài đã
         # tune ở bước 2 (scripts/tune_lengths.py) mà không làm đổi các hệ thống khác.
-        self.sys_cfg, self.gen = sys_cfg, {**gen, **(sys_cfg.get("generation") or {})}
+        self.sys_cfg, self.gen = sys_cfg, effective_generation({"generation": gen}, sys_cfg)
 
     def generate(self, texts: Sequence[str], *, max_new_tokens: int | None = None, desc: str | None = None) -> list[str]:
         import torch
@@ -358,6 +358,42 @@ def run_hierarchical_seq2seq(df, model_path: str, sys_cfg: dict[str, Any], cfg: 
 
 
 # --------------------------------------------------------------------------- #
+# Pipeline triển khai (Summarizer của API)
+# --------------------------------------------------------------------------- #
+
+
+def _inference_config(sys_cfg: dict[str, Any]) -> dict[str, Any]:
+    from vnsum.inference.config import load_inference_config
+
+    icfg = load_inference_config(sys_cfg["inference_config"])
+    for key, value in (sys_cfg.get("long_document") or {}).items():   # override tùy chọn, vd. chunk_batch_size
+        icfg["long_document"][key] = value
+    return icfg
+
+
+def generate_pipeline(texts: Sequence[str], model_path: str, sys_cfg: dict[str, Any]) -> list[str]:
+    """Chạy ĐÚNG đường xử lý của API: ``Summarizer`` + ``configs/inference.yaml`` trên văn bản gốc, từng văn bản
+    một như request thật (chuẩn hóa, chọn chiến lược, sinh chunk theo ``chunk_batch_size`` TRONG văn bản, reduce
+    concat). Khác ``seq2seq``: eval tự lọc câu và sinh theo batch gom nhiều văn bản."""
+    from vnsum.inference.predictor import Summarizer
+
+    try:
+        from tqdm.auto import tqdm
+    except ImportError:  # pragma: no cover
+        def tqdm(x, **_):
+            return x
+
+    icfg = _inference_config(sys_cfg)
+    summ = Summarizer.from_config(icfg, sys_cfg.get("backend", "pytorch"), model_path=model_path,
+                                  device=sys_cfg.get("device"))
+    length = sys_cfg.get("length", icfg["default_length"])
+    out = []
+    for t in tqdm(list(texts), desc=f"pipeline ({summ.backend.name} {summ.backend.dtype}, {length})"):
+        out.append(summ.summarize(t, length=length).summary if t.strip() else "")
+    return out
+
+
+# --------------------------------------------------------------------------- #
 # LLM zero-shot
 # --------------------------------------------------------------------------- #
 
@@ -387,7 +423,7 @@ def generate_llm(
 
 # Tăng khi đổi code sinh / reduce / tiền xử lý của hệ thống seq2seq mà config không đổi
 # (vd. 2: sửa dedupe của reduce concat) -> cache dự đoán cũ không bị dùng lại.
-PIPELINE_VERSION = 3   # 3: dedupe xét tên riêng đầu câu và thứ tự số liệu
+PIPELINE_VERSION = 4   # 3: dedupe xét tên riêng đầu câu và thứ tự số liệu; 4: fingerprint gồm batch_size
 
 _MODEL_HASHES: dict[tuple, str] = {}
 _WEIGHT_SUFFIXES = (".safetensors", ".bin", ".pt")
@@ -421,6 +457,11 @@ def model_identity(model_path: str | None) -> str | None:
     return _MODEL_HASHES[key]
 
 
+def effective_generation(cfg: dict[str, Any], sys_cfg: dict[str, Any]) -> dict[str, Any]:
+    """generation chung của eval.yaml + ``systems.<tên>.generation`` (giống cách ``Seq2SeqGenerator`` áp dụng)."""
+    return {**cfg["generation"], **(sys_cfg.get("generation") or {})}
+
+
 def system_fingerprint(name: str, sys_cfg: dict[str, Any], cfg: dict[str, Any], model_path: str | None) -> str:
     # display_name/description chỉ ảnh hưởng report -> không làm mất cache dự đoán khi đổi tên.
     shown = {k: v for k, v in sys_cfg.items() if k not in ("display_name", "description")}
@@ -428,7 +469,18 @@ def system_fingerprint(name: str, sys_cfg: dict[str, Any], cfg: dict[str, Any], 
     if sys_cfg["type"] == "seq2seq":
         payload["model_path"] = model_identity(model_path)
         payload["pipeline_version"] = PIPELINE_VERSION
-        payload["generation"] = {k: v for k, v in cfg["generation"].items() if k != "batch_size"}
+        # Cấu hình sinh THỰC TẾ (chung + override của hệ thống), GỒM batch_size: đối chứng trên 225 văn bản dài cho
+        # thấy đổi batch làm đổi output ở ~26% văn bản, nên batch khác nhau không được dùng chung cache.
+        payload["generation"] = effective_generation(cfg, sys_cfg)
+    if sys_cfg["type"] == "pipeline":
+        from vnsum.config import load_config
+
+        icfg = _inference_config(sys_cfg)
+        payload["model_path"] = model_identity(model_path)
+        payload["pipeline_version"] = PIPELINE_VERSION
+        # Toàn bộ config suy luận + config dữ liệu (tiền xử lý, tách câu, lọc câu) đã resolve: đổi gì cũng sinh lại.
+        payload["inference"] = {k: v for k, v in icfg.items() if k not in ("api", "benchmark")}
+        payload["data"] = load_config(icfg["data_config"])
     if sys_cfg["type"] == "llm":
         client = dict(cfg["llm"][sys_cfg["client"]])
         client.pop("concurrency", None)
@@ -477,6 +529,8 @@ def run_system(
             preds = [lead_n(t, int(sys_cfg.get("num_sentences", 3))) for t in texts]
         elif kind == "seq2seq" and sys_cfg.get("long_strategy") == "hierarchical":
             preds = run_hierarchical_seq2seq(todo, str(model_path), sys_cfg, cfg)
+        elif kind == "pipeline":
+            preds = generate_pipeline(texts, str(model_path), sys_cfg)
         elif kind == "seq2seq":
             preds = generate_seq2seq(texts, str(model_path), sys_cfg, cfg["generation"], cfg.get("hf", {}).get("token_env"))
         elif kind == "llm":
