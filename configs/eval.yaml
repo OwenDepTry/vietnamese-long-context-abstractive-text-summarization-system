@@ -117,19 +117,22 @@ systems:
       dedupe_threshold: 0.6
 
   # Bước 2: cùng model, tham số độ dài đã tune trên VALIDATION (scripts/tune_lengths.py ->
-  # results/tune_lengths.md). Chép giá trị được chọn vào mục generation dưới đây rồi chạy:
-  #   python scripts/evaluate.py --config configs/eval.yaml --systems vit5_lora,vit5_lora_tuned --model_path ...
+  # results/tune_lengths.md: +0.23 ROUGE-L, không dùng). Nay dùng làm ĐỐI CHỨNG ĐỘ DÀI cho văn bản dài: ép
+  # extractive viết dài (min 64 token ≈ 60 âm tiết) để so với concat ở độ dài tương đương
+  # (results/long_v2, scripts/length_control.py). Đổi generation dưới đây thì cache tự sinh lại.
+  #   python scripts/evaluate.py --config configs/eval.yaml --subset long \
+  #       --systems vit5_lora,vit5_lora_tuned,vit5_lora_hier128,vit5_lora_hier_concat --model_path ... --results_dir results/long_v2
   vit5_lora_tuned:
     enabled: false
     type: seq2seq
-    description: "ViT5 + LoRA, tham số độ dài tune trên validation"
+    description: "ViT5 + LoRA, extractive ép viết dài (min_new_tokens 64) — đối chứng độ dài"
     model_path: null
     input_column: input_text
     max_source_length: 1024
     source_prefix: ""
     generation:                      # ghi đè generation chung cho riêng hệ thống này
-      min_new_tokens: 64              # <- thay bằng giá trị trong results/tune_lengths.md
-      length_penalty: 1.0            # <- thay bằng giá trị trong results/tune_lengths.md
+      min_new_tokens: 64
+      length_penalty: 1.0
 
   # Bước mở rộng B: model sau distillation. Chạy riêng, đường dẫn truyền bằng --system_model:
   #   python scripts/evaluate.py --config configs/eval.yaml --systems vit5_lora,vit5_distill \
