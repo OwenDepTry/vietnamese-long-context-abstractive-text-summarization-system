@@ -20,10 +20,13 @@ PACKAGES = ("torch", "transformers", "peft", "onnxruntime", "optimum", "pandas",
 
 def git_state(cwd: str | Path | None = None) -> dict[str, Any]:
     def _run(*args: str) -> str | None:
+        # encoding="utf-8": mặc định Windows đọc bằng cp1252 và vỡ khi diff có chữ tiếng Việt. Thông tin phụ này
+        # không bao giờ được làm hỏng lần đánh giá: lỗi gì cũng trả None.
         try:
-            return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, timeout=10,
-                                  check=True).stdout.strip()
-        except (OSError, subprocess.SubprocessError):
+            out = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8",
+                                 errors="replace", timeout=30, check=True).stdout
+            return out.strip() if out is not None else None
+        except (OSError, ValueError, subprocess.SubprocessError):
             return None
 
     commit = _run("rev-parse", "HEAD")
@@ -48,7 +51,10 @@ def package_versions(names=PACKAGES) -> dict[str, str | None]:
 def write_run_info(path: str | Path, *, argv: list[str], cfg: dict[str, Any], systems: dict[str, Any],
                    n_samples: int) -> Path:
     path = Path(path)
-    git = git_state(Path(__file__).resolve().parents[3])
+    try:
+        git = git_state(Path(__file__).resolve().parents[3])
+    except Exception as err:  # noqa: BLE001 - không để metadata làm hỏng lần đánh giá
+        git = {"error": f"{type(err).__name__}: {err}"}
     diff = git.pop("diff", None)
     if diff:
         diff_path = path.with_name(path.stem + ".diff")

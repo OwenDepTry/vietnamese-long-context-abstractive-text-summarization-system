@@ -80,3 +80,37 @@ def test_run_info_saves_diff_when_dirty(tmp_path, monkeypatch):
     monkeypatch.setattr(ri, "git_state", lambda cwd=None: {"commit": "abc", "dirty": False})
     ri.write_run_info(tmp_path / "clean" / "run_info.json", argv=["x"], cfg={}, systems={}, n_samples=1)
     assert not (tmp_path / "clean" / "run_info.diff").exists()
+
+
+def test_git_state_reads_utf8_diff(tmp_path):
+    # Windows: subprocess đọc bằng cp1252 mặc định -> diff tiếng Việt từng làm hỏng evaluate.py.
+    import shutil
+    import subprocess
+
+    import pytest
+
+    if not shutil.which("git"):
+        pytest.skip("không có git")
+    from vnsum.eval.run_info import git_state
+
+    run = lambda *a: subprocess.run(["git", *a], cwd=tmp_path, check=True, capture_output=True)  # noqa: E731
+    run("init", "-q")
+    run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init")
+    f = tmp_path / "a.txt"
+    f.write_text("Hà Nội\n", encoding="utf-8")
+    run("add", "a.txt")
+    run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "a")
+    f.write_text("Đà Nẵng “nhiễu động” — ✓\n", encoding="utf-8")
+    state = git_state(tmp_path)
+    assert state["dirty"] is True and "Đà Nẵng" in state["diff"]
+
+
+def test_run_info_never_breaks_evaluation(tmp_path, monkeypatch):
+    import vnsum.eval.run_info as ri
+
+    def boom(cwd=None):
+        raise AttributeError("'NoneType' object has no attribute 'strip'")
+
+    monkeypatch.setattr(ri, "git_state", boom)
+    out = ri.write_run_info(tmp_path / "run_info.json", argv=[], cfg={}, systems={}, n_samples=0)
+    assert "AttributeError" in json.loads(out.read_text(encoding="utf-8"))["git"]["error"]
