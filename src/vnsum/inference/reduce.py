@@ -58,13 +58,15 @@ _NOT_NEGATION = frozenset({
 })
 
 
-def _facts(sentence: str) -> tuple[frozenset[str], frozenset[str], frozenset[str]]:
-    """(số/ngày, tên riêng, từ phủ định) của một câu — những thứ mà hai câu giống chữ vẫn có thể khác nhau."""
+def _facts(sentence: str) -> tuple[tuple[str, ...], frozenset[str], frozenset[str]]:
+    """(dãy số/ngày theo thứ tự, từ viết hoa, từ phủ định) của một câu — những thứ mà hai câu giống chữ vẫn có
+    thể khác nhau."""
     text = unicodedata.normalize("NFC", sentence)
-    numbers = frozenset(_NUMBER_RE.findall(text))
+    numbers = tuple(_NUMBER_RE.findall(text))
     words = _WORD_RE.findall(text)
-    # Tên riêng: âm tiết viết hoa, trừ âm tiết đầu câu.
-    names = frozenset(w for w in words[1:] if w[:1].isupper() and not w.isdigit())
+    # Mọi âm tiết viết hoa, KỂ CẢ đầu câu: tên riêng hay đứng đầu câu ("Nam đã nhận..." / "Lan đã nhận...").
+    # So sánh không phân biệt hoa thường ở phía câu được giữ, nên "Năm 2023 ..." vẫn khớp "... năm 2023 ...".
+    names = frozenset(w.lower() for w in words if w[:1].isupper() and not w.isdigit())
     low = [w.lower() for w in words]
     neg = set()
     for k, w in enumerate(low):
@@ -77,12 +79,25 @@ def _facts(sentence: str) -> tuple[frozenset[str], frozenset[str], frozenset[str
     return numbers, names, frozenset(neg)
 
 
+def _is_subsequence(small: Sequence[str], big: Sequence[str]) -> bool:
+    it = iter(big)
+    return all(x in it for x in small)
+
+
 def facts_compatible(dropped: str, kept: str) -> bool:
-    """Có bỏ được ``dropped`` mà giữ ``kept`` không: mọi số và tên riêng của câu bị bỏ phải có trong câu được
-    giữ, và hai câu phải có cùng từ phủ định ("đã xác nhận" ≠ "chưa xác nhận")."""
+    """Có bỏ được ``dropped`` mà giữ ``kept`` không (bảo thủ: không chắc thì trả False để giữ cả hai câu).
+
+    * Số / ngày của câu bị bỏ phải xuất hiện trong câu được giữ **theo cùng thứ tự** (dãy con): "2023 đạt 100,
+      2024 đạt 200" và "2023 đạt 200, 2024 đạt 100" có cùng tập số nhưng khác quan hệ năm–số liệu.
+    * Mọi từ viết hoa của câu bị bỏ (kể cả từ đầu câu) phải có trong câu được giữ.
+    * Hai câu có cùng từ phủ định ("đã xác nhận" ≠ "chưa xác nhận").
+
+    Kiểm tra theo thứ tự chỉ là xấp xỉ quan hệ giữa các thành phần; không phân tích được cú pháp.
+    """
     num_d, name_d, neg_d = _facts(dropped)
-    num_k, name_k, neg_k = _facts(kept)
-    return num_d <= num_k and name_d <= name_k and neg_d == neg_k
+    num_k, _, neg_k = _facts(kept)
+    kept_words = {w.lower() for w in _WORD_RE.findall(unicodedata.normalize("NFC", kept))}
+    return _is_subsequence(num_d, num_k) and name_d <= kept_words and neg_d == neg_k
 
 
 def _same_text(a: str, b: str) -> bool:

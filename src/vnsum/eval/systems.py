@@ -387,27 +387,31 @@ def generate_llm(
 
 # Tăng khi đổi code sinh / reduce / tiền xử lý của hệ thống seq2seq mà config không đổi
 # (vd. 2: sửa dedupe của reduce concat) -> cache dự đoán cũ không bị dùng lại.
-PIPELINE_VERSION = 2
+PIPELINE_VERSION = 3   # 3: dedupe xét tên riêng đầu câu và thứ tự số liệu
 
-_MODEL_HASHES: dict[str, str] = {}
+_MODEL_HASHES: dict[tuple, str] = {}
 _WEIGHT_SUFFIXES = (".safetensors", ".bin", ".pt")
 
 
 def model_identity(model_path: str | None) -> str | None:
     """Danh tính checkpoint: thư mục model trên máy -> hash nội dung config + trọng số (không phụ thuộc đường
     dẫn, nên chuyển thư mục model không làm mất cache, còn ghi đè trọng số thì có). Model trên HF Hub -> giữ
-    nguyên tên (không kiểm tra revision)."""
+    nguyên tên (không kiểm tra revision).
+
+    Hash được nhớ trong tiến trình theo (đường dẫn, tên + kích thước + thời điểm sửa của từng file), nên ghi đè
+    trọng số ngay trong cùng tiến trình cũng làm hash được tính lại.
+    """
     if not model_path:
         return model_path
     p = Path(model_path)
     if not p.is_dir():
         return model_path
-    key = str(p.resolve())
+    files = sorted(f for f in p.iterdir() if f.is_file() and (f.name == "config.json" or f.suffix in _WEIGHT_SUFFIXES))
+    if not files:
+        return model_path
+    key = (str(p.resolve()), tuple((f.name, f.stat().st_size, f.stat().st_mtime_ns) for f in files))
     if key not in _MODEL_HASHES:
         h = hashlib.sha256()
-        files = sorted(f for f in p.iterdir() if f.is_file() and (f.name == "config.json" or f.suffix in _WEIGHT_SUFFIXES))
-        if not files:
-            return model_path
         for f in files:
             h.update(f.name.encode("utf-8"))
             with f.open("rb") as fh:

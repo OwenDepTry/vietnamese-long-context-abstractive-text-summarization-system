@@ -50,7 +50,7 @@ def test_ui_flow_old_vs_new(cfg, data_cfg, make_doc):  # noqa: F811
     tables = summarize_flow(new)
     assert set(tables["per_document"].index) == {"hierarchical", "direct"}
     text = render_report({k: v[0] for k, v in res.items()}, header=["# t"], memory={"RAM": "1"})
-    assert "Tổng thời gian chờ" in text and "100.0%" in text
+    assert "Tổng thời gian chờ" in text and "| hiện tại (config) | 100.0 | 100.0 |" in text
 
 
 def test_script_end_to_end(tmp_path, monkeypatch, cfg, data_cfg, make_doc):  # noqa: F811
@@ -71,3 +71,16 @@ def test_script_end_to_end(tmp_path, monkeypatch, cfg, data_cfg, make_doc):  # n
     text = out.read_text(encoding="utf-8")
     assert "3 mức độ dài" in text and "hiện tại (config)" in text
     assert len(pd.read_csv(out.with_suffix(".csv"))) == 2 * 2 * 3
+
+
+def test_ablation_has_four_variants_and_cache_never_changes_output(cfg, data_cfg, make_doc):  # noqa: F811
+    from vnsum.inference.pipeline_bench import ABLATION_VARIANTS
+
+    _, _, base_cfg = _summ(cfg, data_cfg)
+    docs = [make_doc(20)[0]]
+    res = {n: run_ui_flow(Summarizer(FakeBackend(), variant_config(base_cfg, ov), data_cfg), docs)
+           for n, ov in ABLATION_VARIANTS.items()}
+    assert len(res) == 4
+    assert outputs_identical(res["batch 1, không dùng lại"], res["batch 1, dùng lại"]) == 100.0
+    text = render_report(res, header=["# t"], memory={})
+    assert text.count("| batch ") >= 3 and "vit5_lora_hier_concat_b1" in text

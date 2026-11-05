@@ -558,3 +558,19 @@ def test_config_validates_hierarchical_system():
     del cfg["systems"]["vit5_lora_hier"]["hierarchical"]["max_rounds"]
     with pytest.raises(EvalConfigError):
         validate_eval_config(cfg)
+
+
+def test_human_eval_paired_uses_same_documents():
+    pd = pytest.importorskip("pandas")
+    from vnsum.eval.human_eval import select_items
+
+    ps = _human_per_sample(pd)
+    ps.loc[(ps.system == "vit5_public") & (ps.id == "d3"), "faithfulness"] = None   # d3 thiếu điểm ở một hệ thống
+    items = select_items(ps, ["vit5_lora", "vit5_public"], 20, 42, paired=True)
+    assert len(items) == 20 and items["item_id"].is_unique
+    by_sys = items.groupby("system")["id"].apply(set)
+    assert by_sys["vit5_lora"] == by_sys["vit5_public"] and len(by_sys["vit5_lora"]) == 10
+    assert "d3" not in by_sys["vit5_lora"]                              # chỉ văn bản mọi hệ thống đều có điểm
+    assert items["system"].tolist() != sorted(items["system"].tolist())  # thứ tự trình bày vẫn trộn
+    with pytest.raises(ValueError):
+        select_items(ps, ["vit5_lora", "vit5_public"], 60, 42, paired=True)

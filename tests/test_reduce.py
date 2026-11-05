@@ -120,6 +120,9 @@ def test_eval_config_has_concat_system():
     ("Ông Huệ rời Bosch Việt Nam.", "Ông Huệ không rời Bosch Việt Nam."),
     ("Mưa lớn gây ngập nhiều tuyến đường ở Hà Nội hôm nay.", "Mưa lớn gây ngập nhiều tuyến đường ở Đà Nẵng hôm nay."),
     ("Chuyến bay cất cánh lúc 10:30 ngày 22/5.", "Chuyến bay cất cánh lúc 11:45 ngày 22/5."),
+    # Review lần 2: tên riêng đứng đầu câu, và cùng tập số nhưng đảo quan hệ năm–số liệu.
+    ("Nam đã nhận được học bổng toàn phần của trường đại học.", "Lan đã nhận được học bổng toàn phần của trường đại học."),
+    ("Năm 2023 đạt 100 tỷ đồng, năm 2024 đạt 200 tỷ đồng.", "Năm 2023 đạt 200 tỷ đồng, năm 2024 đạt 100 tỷ đồng."),
 ])
 def test_dedupe_keeps_sentences_with_different_facts(a, b):
     assert overlap_ratio(a, b) >= 0.6                      # giống chữ: trước đây bị gộp làm một
@@ -129,6 +132,9 @@ def test_dedupe_keeps_sentences_with_different_facts(a, b):
 def test_dedupe_still_merges_true_duplicates():
     longer = "Năm 2023, doanh thu của công ty đạt 100 tỷ đồng, tăng mạnh so với năm trước."
     assert dedupe_sentences(["Năm 2023, doanh thu của công ty đạt 100 tỷ đồng.", longer]) == [longer]
+    # Từ đầu câu viết hoa vẫn khớp khi câu được giữ chứa nó ở dạng thường.
+    kept = "Theo báo cáo, năm 2023 doanh thu của công ty đạt 100 tỷ đồng."
+    assert facts_compatible("Năm 2023 doanh thu của công ty đạt 100 tỷ đồng.", kept)
     assert dedupe_sentences(["Hà Nội mưa to.", "hà nội  mưa to ."]) == ["Hà Nội mưa to."]   # trùng chính xác
 
 

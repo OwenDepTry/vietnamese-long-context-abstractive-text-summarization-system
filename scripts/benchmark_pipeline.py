@@ -26,7 +26,7 @@ if str(_SRC) not in sys.path:
 
 from vnsum.inference.config import load_inference_config  # noqa: E402
 from vnsum.inference.pipeline_bench import (  # noqa: E402
-    DEFAULT_VARIANTS, LENGTHS, render_report, run_ui_flow, select_mixed, variant_config,
+    ABLATION_VARIANTS, DEFAULT_VARIANTS, LENGTHS, render_report, run_ui_flow, select_mixed, variant_config,
 )
 
 
@@ -39,7 +39,9 @@ def main(argv=None) -> int:
     p.add_argument("--n_short", type=int, default=20)
     p.add_argument("--n_long", type=int, default=20)
     p.add_argument("--warmup", type=int, default=2, help="số văn bản chạy trước, không tính")
-    p.add_argument("--out", default="results/pipeline_benchmark.md")
+    p.add_argument("--ablation", action="store_true",
+                   help="4 biến thể: batch 1/4 × có/không dùng lại chunk (tách nguồn gốc tốc độ và khác biệt output)")
+    p.add_argument("--out", default=None, help="mặc định results/pipeline_benchmark.md (--ablation: _ablation.md)")
     args = p.parse_args(argv)
 
     import pandas as pd
@@ -66,7 +68,8 @@ def main(argv=None) -> int:
         sampler.start()
 
     results: dict[str, pd.DataFrame] = {}
-    for name, overrides in DEFAULT_VARIANTS.items():
+    variants = ABLATION_VARIANTS if args.ablation else DEFAULT_VARIANTS
+    for name, overrides in variants.items():
         summ = Summarizer(backend, variant_config(cfg, overrides), data_cfg)
         for t in texts[: args.warmup]:
             summ.summarize(t, length="medium")
@@ -90,7 +93,7 @@ def main(argv=None) -> int:
         f"chunk_cache_size {ld.get('chunk_cache_size', 0)}; beam search như config (không phải streaming).",
     ]
     report = render_report(results, header=header, memory=memory)
-    out = Path(args.out)
+    out = Path(args.out or ("results/pipeline_benchmark_ablation.md" if args.ablation else "results/pipeline_benchmark.md"))
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(report, encoding="utf-8")
     pd.concat([df.assign(variant=n) for n, df in results.items()]).to_csv(out.with_suffix(".csv"), index=False,

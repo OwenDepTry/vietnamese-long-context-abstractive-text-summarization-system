@@ -26,8 +26,11 @@ SHEET_COLUMNS = ["item_id", "human_score", "human_notes"]
 
 
 # --------------------------------------------------------------------------- export
-def select_items(per_sample: pd.DataFrame, systems: list[str], n_items: int, seed: int) -> pd.DataFrame:
+def select_items(per_sample: pd.DataFrame, systems: list[str], n_items: int, seed: int,
+                 paired: bool = False) -> pd.DataFrame:
     """Chia đều n_items cho các hệ thống (phần dư cho hệ thống đứng đầu danh sách), chỉ lấy mẫu có điểm judge.
+
+    ``paired``: mọi hệ thống được chấm trên CÙNG các văn bản (n_items // số hệ thống văn bản; phần dư bỏ).
 
     Lấy ngẫu nhiên theo seed, không phụ thuộc thứ tự dòng đầu vào; thứ tự trình bày được trộn
     lẫn giữa các hệ thống để người chấm không đoán được hệ thống.
@@ -40,7 +43,15 @@ def select_items(per_sample: pd.DataFrame, systems: list[str], n_items: int, see
     base, extra = divmod(int(n_items), len(systems))
     rng = random.Random(int(seed))
     picked = []
-    for k, system in enumerate(systems):
+    if paired:
+        # Cùng văn bản cho mọi hệ thống (so sánh cặp, vd. concat với extractive trên cùng văn bản dài).
+        common = set.intersection(*(set(judged.loc[judged["system"] == s, "id"].astype(str)) for s in systems))
+        pool = sorted(common)
+        random.Random(f"{seed}:paired").shuffle(pool)
+        if base > len(pool):
+            raise ValueError(f"Chỉ có {len(pool)} văn bản được judge chấm cho mọi hệ thống, không đủ {base}")
+        picked = [(system, i) for i in pool[:base] for system in systems]
+    for k, system in enumerate(systems if not paired else []):
         want = base + (1 if k < extra else 0)
         pool = sorted(judged.loc[judged["system"] == system, "id"].astype(str))
         rng_s = random.Random(f"{seed}:{system}")

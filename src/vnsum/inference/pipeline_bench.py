@@ -25,6 +25,14 @@ DEFAULT_VARIANTS: dict[str, dict[str, Any]] = {
     "hiện tại (config)": {},
 }
 
+# --ablation: tách hai thay đổi (sinh theo batch / dùng lại chunk) để biết tốc độ và khác biệt output đến từ đâu.
+ABLATION_VARIANTS: dict[str, dict[str, Any]] = {
+    "batch 1, không dùng lại": {"chunk_batch_size": 1, "chunk_cache_size": 0},
+    "batch 1, dùng lại": {"chunk_batch_size": 1, "chunk_cache_size": 16},
+    "batch 4, không dùng lại": {"chunk_batch_size": 4, "chunk_cache_size": 0},
+    "batch 4, dùng lại": {"chunk_batch_size": 4, "chunk_cache_size": 16},
+}
+
 
 def select_mixed(eval_df: pd.DataFrame, n_short: int, n_long: int, seed: int) -> pd.DataFrame:
     """Lấy cố định ``n_short`` văn bản ngắn + ``n_long`` văn bản dài (cột ``is_long``) theo seed.
@@ -124,9 +132,15 @@ def render_report(results: dict[str, pd.DataFrame], *, header: Sequence[str], me
             lines.append(f"| {n} | {int(k)} | {int(r.n)} | {r.p50_ms:,.0f} | {r.mean_calls:.1f} |")
 
     if len(names) >= 2:
-        same = outputs_identical(results[names[0]], results[names[-1]])
-        lines += ["", f"Bản tóm tắt giống hệt nhau giữa `{names[0]}` và `{names[-1]}`: **{same:.1f}%** số request. "
-                  "Khác biệt (nếu có) đến từ padding khi sinh chunk theo batch, không phải lỗi."]
+        lines += ["", f"## Output so với `{names[0]}`", "",
+                  "| Biến thể | Giống hệt: tất cả (%) | Giống hệt: văn bản dài (%) |", "|---|---|---|"]
+        base = results[names[0]]
+        for n in names[1:]:
+            long_b, long_n = (df[df["strategy"] == "hierarchical"] for df in (base, results[n]))
+            lines.append(f"| {n} | {outputs_identical(base, results[n]):.1f} | {outputs_identical(long_b, long_n):.1f} |")
+        lines += ["", "Dùng lại bản tóm tắt chunk không đổi nội dung (trả đúng bản đã sinh). Khác biệt chỉ có thể đến từ "
+                  "việc sinh chunk theo batch (padding / sai số số học); ảnh hưởng chất lượng cần đo bằng ROUGE "
+                  "(`vit5_lora_hier_concat_b1` trong `configs/eval.yaml`), không suy ra từ tỷ lệ giống nhau."]
     if memory:
         lines += ["", "## Bộ nhớ", ""] + [f"- {k}: {v}" for k, v in memory.items()]
     lines += [

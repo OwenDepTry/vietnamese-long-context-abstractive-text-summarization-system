@@ -54,3 +54,29 @@ def test_model_identity_follows_weights_not_path(tmp_path):
     sys_cfg = {"type": "seq2seq", "input_column": "input_text"}
     cfg = {"generation": {"num_beams": 4}}
     assert system_fingerprint("s", sys_cfg, cfg, str(a)) != system_fingerprint("s", sys_cfg, cfg, str(c))
+
+
+def test_model_identity_rehashes_after_overwrite_in_same_process(tmp_path):
+    # Review lần 2: ghi đè trọng số tại CÙNG thư mục, tính lại trong cùng tiến trình.
+    import os
+
+    d = _model_dir(tmp_path / "m", b"weights-v1")
+    before = model_identity(str(d))
+    w = d / "model.safetensors"
+    w.write_bytes(b"weights-v2-other")
+    st = w.stat()
+    os.utime(w, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000))   # chắc chắn đổi mtime cả khi hệ thống tệp thô
+    assert model_identity(str(d)) != before
+
+
+def test_run_info_saves_diff_when_dirty(tmp_path, monkeypatch):
+    import vnsum.eval.run_info as ri
+
+    monkeypatch.setattr(ri, "git_state", lambda cwd=None: {"commit": "abc", "dirty": True, "diff": "-a\n+b"})
+    out = ri.write_run_info(tmp_path / "run_info.json", argv=["x"], cfg={}, systems={}, n_samples=1)
+    info = json.loads(out.read_text(encoding="utf-8"))
+    assert info["git"]["diff_file"] == "run_info.diff" and "diff" not in info["git"]
+    assert (tmp_path / "run_info.diff").read_text(encoding="utf-8") == "-a\n+b\n"
+    monkeypatch.setattr(ri, "git_state", lambda cwd=None: {"commit": "abc", "dirty": False})
+    ri.write_run_info(tmp_path / "clean" / "run_info.json", argv=["x"], cfg={}, systems={}, n_samples=1)
+    assert not (tmp_path / "clean" / "run_info.diff").exists()

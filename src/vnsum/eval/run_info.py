@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import platform
 import subprocess
@@ -27,7 +28,11 @@ def git_state(cwd: str | Path | None = None) -> dict[str, Any]:
 
     commit = _run("rev-parse", "HEAD")
     status = _run("status", "--porcelain", "--untracked-files=no")
-    return {"commit": commit, "dirty": bool(status) if status is not None else None}
+    state: dict[str, Any] = {"commit": commit, "dirty": bool(status) if status is not None else None}
+    if state["dirty"]:
+        # Commit hash chưa đủ xác định code đã chạy khi còn thay đổi chưa commit -> giữ lại chính diff đó.
+        state["diff"] = _run("diff", "HEAD")
+    return state
 
 
 def package_versions(names=PACKAGES) -> dict[str, str | None]:
@@ -43,10 +48,17 @@ def package_versions(names=PACKAGES) -> dict[str, str | None]:
 def write_run_info(path: str | Path, *, argv: list[str], cfg: dict[str, Any], systems: dict[str, Any],
                    n_samples: int) -> Path:
     path = Path(path)
+    git = git_state(Path(__file__).resolve().parents[3])
+    diff = git.pop("diff", None)
+    if diff:
+        diff_path = path.with_name(path.stem + ".diff")
+        diff_path.write_text(diff + "\n", encoding="utf-8")
+        git["diff_file"] = diff_path.name
+        git["diff_sha1"] = hashlib.sha1(diff.encode("utf-8")).hexdigest()[:12]
     info = {
         "created_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "argv": argv,
-        "git": git_state(Path(__file__).resolve().parents[3]),
+        "git": git,
         "python": sys.version.split()[0],
         "platform": platform.platform(),
         "packages": package_versions(),

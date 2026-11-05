@@ -31,6 +31,9 @@ def parse_args(argv=None):
     p.add_argument("--results_dir", default=None)
     p.add_argument("--processed_dir", default=None)
     p.add_argument("--force", action="store_true", help="export: ghi đè annotation_sheet.csv đã có (MẤT điểm đã chấm)")
+    p.add_argument("--systems", default=None, help="export: ghi đè human_eval.systems, phân cách dấu phẩy")
+    p.add_argument("--n_items", type=int, default=None, help="export: ghi đè human_eval.n_items")
+    p.add_argument("--paired", action="store_true", help="export: mọi hệ thống chấm trên cùng các văn bản")
     return p.parse_args(argv)
 
 
@@ -52,8 +55,10 @@ def main(argv=None) -> int:
             return 1
         per_sample = pd.read_csv(per_sample_path, encoding="utf-8-sig", dtype={"id": str}, keep_default_na=True)
         per_sample["prediction"] = per_sample["prediction"].fillna("")
-        items = select_items(per_sample, list(hcfg.get("systems", ["vit5_lora", "vit5_public", "llm_zeroshot"])),
-                             int(hcfg.get("n_items", 50)), int(hcfg.get("seed", 42)))
+        systems = ([x.strip() for x in args.systems.split(",")] if args.systems
+                   else list(hcfg.get("systems", ["vit5_lora", "vit5_public", "llm_zeroshot"])))
+        items = select_items(per_sample, systems, int(args.n_items or hcfg.get("n_items", 50)),
+                             int(hcfg.get("seed", 42)), paired=args.paired)
         eval_df = load_eval_set(cfg)
         docs = eval_df.assign(id=eval_df["id"].astype(str)).set_index("id")["document"]
         try:
