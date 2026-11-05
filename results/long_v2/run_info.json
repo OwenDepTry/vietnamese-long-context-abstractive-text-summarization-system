@@ -1,0 +1,268 @@
+{
+  "created_utc": "2026-11-05T13:52:47+00:00",
+  "argv": [
+    "scripts/evaluate.py",
+    "--config",
+    "configs/eval.yaml",
+    "--subset",
+    "long",
+    "--systems",
+    "vit5_lora,vit5_lora_hier128,vit5_lora_hier_concat",
+    "--model_path",
+    "C:/vnsum-runs/vit5-vnsum-merged",
+    "--results_dir",
+    "results/long_v2"
+  ],
+  "git": {
+    "commit": "0364b98802325c3b61ac4e7ff3b9631cf9ccd43a",
+    "dirty": false
+  },
+  "python": "3.13.12",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "packages": {
+    "torch": "2.14.1+cu130",
+    "transformers": "5.16.1",
+    "peft": "0.21.2",
+    "onnxruntime": null,
+    "optimum": null,
+    "pandas": "2.3.3",
+    "rouge-score": "0.1.2",
+    "underthesea": "9.5.0"
+  },
+  "n_samples": 225,
+  "systems": {
+    "vit5_lora": {
+      "model_path": "C:/vnsum-runs/vit5-vnsum-merged",
+      "model_identity": "sha256:edf890d3b10f90c7",
+      "fingerprint": "8e66a0fdc13fc369"
+    },
+    "vit5_lora_hier128": {
+      "model_path": "C:/vnsum-runs/vit5-vnsum-merged",
+      "model_identity": "sha256:edf890d3b10f90c7",
+      "fingerprint": "2ad3411c832a3299"
+    },
+    "vit5_lora_hier_concat": {
+      "model_path": "C:/vnsum-runs/vit5-vnsum-merged",
+      "model_identity": "sha256:edf890d3b10f90c7",
+      "fingerprint": "555728c6abe29150"
+    }
+  },
+  "config": {
+    "seed": 42,
+    "paths": {
+      "processed_dir": "data/processed",
+      "results_dir": "results",
+      "train_config": "configs/train.yaml"
+    },
+    "hf": {
+      "token_env": "HF_TOKEN"
+    },
+    "eval_set": {
+      "split": "test",
+      "datasets": [
+        "vietnews",
+        "wikilingua_vi"
+      ],
+      "samples_per_dataset": 1000,
+      "long_doc_threshold_tokens": 1024
+    },
+    "generation": {
+      "num_beams": 4,
+      "max_new_tokens": 128,
+      "no_repeat_ngram_size": 3,
+      "early_stopping": true,
+      "batch_size": 8,
+      "dtype": "auto"
+    },
+    "systems": {
+      "lead3": {
+        "enabled": true,
+        "type": "lead",
+        "num_sentences": 3,
+        "input_column": "document"
+      },
+      "vit5_lora": {
+        "enabled": true,
+        "type": "seq2seq",
+        "display_name": null,
+        "description": "ViT5-base + LoRA r=16 (phase 2)",
+        "model_path": null,
+        "input_column": "input_text",
+        "max_source_length": 1024,
+        "source_prefix": ""
+      },
+      "vit5_lora_hier": {
+        "enabled": false,
+        "type": "seq2seq",
+        "description": "ViT5 + LoRA, văn bản dài: tóm tắt phân cấp",
+        "model_path": null,
+        "input_column": "input_text",
+        "max_source_length": 1024,
+        "source_prefix": "",
+        "long_strategy": "hierarchical",
+        "hierarchical": {
+          "data_config": "configs/data.yaml",
+          "chunk_max_tokens": 1024,
+          "overlap_tokens": 64,
+          "chunk_max_new_tokens": 48,
+          "max_rounds": 3
+        }
+      },
+      "vit5_lora_hier128": {
+        "enabled": false,
+        "type": "seq2seq",
+        "description": "ViT5 + LoRA, văn bản dài: tóm tắt phân cấp, chunk 128 token",
+        "model_path": null,
+        "input_column": "input_text",
+        "max_source_length": 1024,
+        "source_prefix": "",
+        "long_strategy": "hierarchical",
+        "hierarchical": {
+          "data_config": "configs/data.yaml",
+          "chunk_max_tokens": 1024,
+          "overlap_tokens": 64,
+          "chunk_max_new_tokens": 128,
+          "max_rounds": 3
+        }
+      },
+      "vit5_lora_hier_concat": {
+        "enabled": false,
+        "type": "seq2seq",
+        "description": "ViT5 + LoRA, văn bản dài: tóm tắt từng chunk, ghép + bỏ câu trùng (không sinh lại)",
+        "model_path": null,
+        "input_column": "input_text",
+        "max_source_length": 1024,
+        "source_prefix": "",
+        "long_strategy": "hierarchical",
+        "hierarchical": {
+          "data_config": "configs/data.yaml",
+          "chunk_max_tokens": 1024,
+          "overlap_tokens": 64,
+          "chunk_max_new_tokens": 128,
+          "max_rounds": 1,
+          "reduce": "concat",
+          "final_max_tokens": 128,
+          "dedupe_threshold": 0.6
+        }
+      },
+      "vit5_lora_tuned": {
+        "enabled": false,
+        "type": "seq2seq",
+        "description": "ViT5 + LoRA, tham số độ dài tune trên validation",
+        "model_path": null,
+        "input_column": "input_text",
+        "max_source_length": 1024,
+        "source_prefix": "",
+        "generation": {
+          "min_new_tokens": 0,
+          "length_penalty": 1.0
+        }
+      },
+      "vit5_distill": {
+        "enabled": false,
+        "type": "seq2seq",
+        "description": "ViT5 + LoRA, train tiếp trên bản tóm tắt của LLM (bước B)",
+        "model_path": null,
+        "input_column": "input_text",
+        "max_source_length": 1024,
+        "source_prefix": ""
+      },
+      "vit5_public": {
+        "enabled": true,
+        "type": "seq2seq",
+        "model_path": "VietAI/vit5-base-vietnews-summarization",
+        "input_column": "input_text",
+        "max_source_length": 1024,
+        "source_prefix": ""
+      },
+      "llm_zeroshot": {
+        "enabled": true,
+        "type": "llm",
+        "client": "summarizer",
+        "input_column": "document",
+        "max_input_chars": 30000
+      }
+    },
+    "llm": {
+      "summarizer": {
+        "provider": "openai_compatible",
+        "base_url": "https://api.openai.com/v1",
+        "model": "gpt-6-luna",
+        "api_key_env": "OPENAI_API_KEY",
+        "max_tokens_field": "max_completion_tokens",
+        "temperature": 0,
+        "max_tokens": 512,
+        "extra_body": {
+          "reasoning_effort": "none"
+        },
+        "concurrency": 4,
+        "timeout_seconds": 120,
+        "max_retries": 5,
+        "prompt": "Hãy tóm tắt văn bản tiếng Việt dưới đây thành khoảng 2 câu (không quá 50 từ) bằng tiếng Việt.\nChỉ dùng thông tin có trong văn bản. Chỉ trả về đoạn tóm tắt, không thêm tiêu đề hay giải thích.\n\nVăn bản:\n{document}\n"
+      },
+      "judge": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-6",
+        "api_key_env": "ANTHROPIC_API_KEY",
+        "base_url": null,
+        "temperature": 0,
+        "max_tokens": 400,
+        "concurrency": 4,
+        "timeout_seconds": 120,
+        "max_retries": 5
+      }
+    },
+    "judge": {
+      "enabled": true,
+      "sample_size": 200,
+      "seed": 42,
+      "systems": [
+        "lead3",
+        "vit5_lora",
+        "vit5_public",
+        "llm_zeroshot",
+        "vit5_lora_hier",
+        "vit5_lora_hier_concat",
+        "vit5_distill"
+      ],
+      "max_document_chars": 30000,
+      "prompt_version": "v1"
+    },
+    "bertscore": {
+      "enabled": true,
+      "model": "vinai/phobert-base",
+      "num_layers": 10,
+      "max_length": 256,
+      "batch_size": 32,
+      "word_segmentation": "underthesea"
+    },
+    "aux_metrics": {
+      "repetition_ngram": 3,
+      "novel_ngrams": [
+        1,
+        2
+      ]
+    },
+    "stats": {
+      "bootstrap_samples": 1000,
+      "confidence": 0.95,
+      "seed": 42,
+      "reference_system": "vit5_lora"
+    },
+    "human_eval": {
+      "n_items": 50,
+      "seed": 42,
+      "systems": [
+        "vit5_lora",
+        "vit5_public",
+        "llm_zeroshot"
+      ],
+      "dir": "human_eval"
+    },
+    "qualitative": {
+      "system": "vit5_lora",
+      "k": 5,
+      "document_chars": 700
+    }
+  }
+}
