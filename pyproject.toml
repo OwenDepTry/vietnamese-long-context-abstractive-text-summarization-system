@@ -16,3 +16,12 @@ where = ["src"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = ["notebooks"]
+
+[tool.ruff.lint]
+# Lỗi thật (cú pháp, tên chưa định nghĩa, import thừa...), không bắt lỗi kiểu dáng; CI chạy `ruff check`.
+select = ["E9", "F"]

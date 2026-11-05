@@ -1,0 +1,11 @@
+# Thư viện nhẹ cho CI (.github/workflows/tests.yml): đủ để chạy test offline, KHÔNG có torch / transformers /
+# onnxruntime / model. Các test cần những thứ đó tự bỏ qua (pytest.importorskip) và chạy trên máy có GPU.
+pytest==9.0.3
+numpy==2.2.6
+pandas==2.3.3
+pyarrow==21.0.0
+PyYAML==6.0.3
+tqdm==4.67.1
+rouge-score==0.1.2
+fastapi==0.142.2
+httpx==0.28.1

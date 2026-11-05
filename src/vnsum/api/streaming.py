@@ -32,6 +32,8 @@ def sse_event(event: str, data: dict[str, Any]) -> str:
 class StreamingBackend:
     """Backend bọc ngoài: cùng interface ``generate(texts, gen_kwargs)`` như backend của phase 4."""
 
+    max_batch_size = 1   # Summarizer đọc giá trị này: tóm tắt chunk từng cái một để stream theo từng lần sinh
+
     def __init__(self, base: Any, emit: Emit, streamer_factory: Callable[[Any], Any] | None = None) -> None:
         self.base = base
         self.emit = emit

@@ -73,7 +73,8 @@ def main() -> None:
                     st.error(res["error"])
                     continue
                 st.write(res["summary"])
-                st.caption(f"{res['latency_ms']:,.0f} ms · {res['new_tokens']} token · chiến lược {res['strategy']}")
+                reused = " · dùng lại tóm tắt chunk" if res.get("chunk_cache_hit") else ""
+                st.caption(f"{res['latency_ms']:,.0f} ms · {res['new_tokens']} token · chiến lược {res['strategy']}{reused}")
 
 
 if __name__ == "__main__":

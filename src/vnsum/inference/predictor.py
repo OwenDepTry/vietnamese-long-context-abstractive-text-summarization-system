@@ -20,8 +20,12 @@ input của model giống hệt lúc train. Văn bản dài được xử lý th
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
+import threading
 import time
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol, Sequence
@@ -219,10 +223,11 @@ class SummaryResult:
     input_tokens: int                   # token của văn bản sau chuẩn hóa (trước khi cắt/lọc)
     model_input_tokens: int             # token thực sự đưa vào lần sinh cuối
     new_tokens: int                     # token sinh ra ở lần sinh cuối
-    generate_calls: int
+    generate_calls: int                 # số lần gọi model (các chunk được sinh theo batch)
     timings_ms: dict[str, float] = field(default_factory=dict)
     chunk_summaries: list[str] = field(default_factory=list)
     model_input: str = ""
+    chunk_cache_hit: bool = False       # bản tóm tắt chunk lấy lại từ lần gọi trước (cùng văn bản)
 
 
 class Summarizer:
@@ -234,6 +239,10 @@ class Summarizer:
         sc = data_cfg.get("sentence_split", {}) or {}
         backend_name, min_chars = sc.get("backend", "rule"), int(sc.get("min_chars", 2))
         self.splitter = lambda t: split_sentences(t, backend=backend_name, min_chars=min_chars)
+        # Bản tóm tắt chunk của các văn bản gần nhất (LRU). UI gọi short / medium / long lần lượt cho CÙNG
+        # văn bản; với reduce concat cả ba dùng cùng bản tóm tắt chunk, chỉ khác ngân sách chọn câu cuối.
+        self._chunk_cache: OrderedDict[str, list[str]] = OrderedDict()
+        self._chunk_lock = threading.Lock()
 
     @classmethod
     def from_config(cls, cfg: dict[str, Any], backend: str | None = None, **kwargs) -> "Summarizer":
@@ -270,6 +279,46 @@ class Summarizer:
     def _gen(self, texts: list[str], length: str) -> GenerationOutput:
         return self.backend.generate(texts, generation_kwargs(self.cfg, length))
 
+    def _chunk_batch_size(self) -> int:
+        size = int(self.cfg["long_document"].get("chunk_batch_size", 1))
+        limit = getattr(self.backend, "max_batch_size", None)   # vd. streaming chỉ hỗ trợ batch 1
+        return max(1, min(size, int(limit)) if limit else size)
+
+    def _gen_chunks(self, texts: list[str], length: str) -> list[str]:
+        """Tóm tắt nhiều chunk, theo batch ``long_document.chunk_batch_size`` (thay vì từng chunk một)."""
+        n = self._chunk_batch_size()
+        out: list[str] = []
+        for i in range(0, len(texts), n):
+            out.extend(self._gen(texts[i:i + n], length).texts)
+        return out
+
+    def _n_batches(self, n_texts: int) -> int:
+        """Số lần gọi model để tóm tắt ``n_texts`` chunk (= ``generate_calls``)."""
+        return -(-n_texts // self._chunk_batch_size())
+
+    def _chunk_key(self, doc: str) -> str:
+        ld = self.cfg["long_document"]
+        sig = json.dumps([ld["chunk_max_tokens"], ld["overlap_tokens"], ld["chunk_length"],
+                          generation_kwargs(self.cfg, ld["chunk_length"])], sort_keys=True, default=str)
+        return hashlib.sha1((sig + "\x00" + doc).encode("utf-8")).hexdigest()
+
+    def _cached_chunk_summaries(self, doc: str, chunks: list) -> tuple[list[str], bool]:
+        size = int(self.cfg["long_document"].get("chunk_cache_size", 0))
+        key = self._chunk_key(doc) if size > 0 else ""
+        if size > 0:
+            with self._chunk_lock:
+                if key in self._chunk_cache:
+                    self._chunk_cache.move_to_end(key)
+                    return list(self._chunk_cache[key]), True
+        parts = self._gen_chunks([c.text for c in chunks], self.cfg["long_document"]["chunk_length"])
+        if size > 0:
+            with self._chunk_lock:
+                self._chunk_cache[key] = list(parts)
+                self._chunk_cache.move_to_end(key)
+                while len(self._chunk_cache) > size:
+                    self._chunk_cache.popitem(last=False)
+        return parts, False
+
     def summarize(self, text: str, length: str | None = None, strategy: str | None = None) -> SummaryResult:
         length = length or self.cfg["default_length"]
         generation_kwargs(self.cfg, length)  # kiểm tra length sớm
@@ -293,9 +342,9 @@ class Summarizer:
                 chunks = chunk_document(current, self.counter, chunk_max_tokens=int(ld["chunk_max_tokens"]),
                                         overlap_tokens=int(ld["overlap_tokens"]), splitter=self.splitter)
                 t = time.perf_counter()
-                parts = [self._gen([c.text], ld["chunk_length"]).texts[0] for c in chunks]
+                parts = self._gen_chunks([c.text for c in chunks], ld["chunk_length"])
                 timings["generate_chunks_ms"] = timings.get("generate_chunks_ms", 0.0) + (time.perf_counter() - t) * 1000
-                calls += len(chunks)
+                calls += self._n_batches(len(chunks))
                 if not chunk_summaries:  # giữ bản tóm tắt chunk của vòng đầu để hiển thị / debug
                     chunk_summaries = parts
                 current = " ".join(p for p in parts if p)
@@ -326,7 +375,7 @@ class Summarizer:
                                 overlap_tokens=int(ld["overlap_tokens"]), splitter=self.splitter)
         t_pre = (time.perf_counter() - t0) * 1000
         t = time.perf_counter()
-        parts = [self._gen([c.text], ld["chunk_length"]).texts[0] for c in chunks]
+        parts, hit = self._cached_chunk_summaries(doc, chunks)
         gen_ms = (time.perf_counter() - t) * 1000
         max_tokens = int(length_preset(self.cfg, length)["max_new_tokens"])
         reserve = self.counter.reserve_special_tokens
@@ -341,6 +390,6 @@ class Summarizer:
         return SummaryResult(
             summary=summary, length=length, strategy="hierarchical", input_tokens=n_tok,
             model_input_tokens=max((self.counter.count(c.text) + reserve for c in chunks), default=0),
-            new_tokens=self.counter.count(summary), generate_calls=len(chunks), timings_ms=timings,
-            chunk_summaries=parts, model_input=joined,
+            new_tokens=self.counter.count(summary), generate_calls=0 if hit else self._n_batches(len(chunks)), timings_ms=timings,
+            chunk_summaries=parts, model_input=joined, chunk_cache_hit=hit,
         )

@@ -76,6 +76,7 @@ class SummarizeResponse(BaseModel):
     model_input_tokens: int
     new_tokens: int
     generate_calls: int
+    chunk_cache_hit: bool = Field(default=False, description="dùng lại bản tóm tắt chunk của lần gọi trước (cùng văn bản)")
     backend: BackendInfo
 
 
@@ -173,7 +174,7 @@ def create_app(settings: ApiSettings | None = None, cfg: dict[str, Any] | None =
         return SummarizeResponse(
             request_id=rid, summary=r.summary, length=r.length, strategy=r.strategy, latency_ms=round(latency, 1),
             input_tokens=r.input_tokens, model_input_tokens=r.model_input_tokens, new_tokens=r.new_tokens,
-            generate_calls=r.generate_calls, backend=_backend_info(summ.backend),
+            generate_calls=r.generate_calls, chunk_cache_hit=r.chunk_cache_hit, backend=_backend_info(summ.backend),
         )
 
     @app.post("/summarize/stream")

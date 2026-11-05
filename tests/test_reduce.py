@@ -67,7 +67,7 @@ def test_summarizer_concat_does_not_regenerate(cfg, data_cfg, make_doc):  # noqa
     cfg = copy.deepcopy(cfg)
     cfg["max_input_tokens"] = 40
     cfg["long_document"].update(chunk_max_tokens=30, overlap_tokens=5, hierarchical_above_tokens=100,
-                                reduce="concat", chunk_length="medium")
+                                reduce="concat", chunk_length="medium", chunk_batch_size=1)
     backend = FakeBackend()
     summ = Summarizer(backend, cfg, data_cfg)
     doc, _ = make_doc(20)                                  # 240 từ > 100 -> hierarchical
@@ -105,12 +105,12 @@ def test_hierarchical_concat_summaries_batches_all_chunks(counter, make_doc):
 
 
 def test_eval_config_has_concat_system():
-    cfg = load_eval_config(Path(__file__).resolve().parents[1] / "configs" / "eval.yaml")
-    sys_cfg = cfg["systems"]["vit5_lora_hier_concat"]
+    ecfg = load_eval_config(Path(__file__).resolve().parents[1] / "configs" / "eval.yaml")
+    sys_cfg = ecfg["systems"]["vit5_lora_hier_concat"]
     assert sys_cfg["enabled"] is False and sys_cfg["hierarchical"]["reduce"] == "concat"
     sys_cfg["hierarchical"]["reduce"] = "x"
     with pytest.raises(EvalConfigError):
-        validate_eval_config(cfg)
+        validate_eval_config(ecfg)
 
 
 # --------------------------------------------------------------------------- dedupe: giống chữ ≠ giống thông tin
@@ -137,3 +137,56 @@ def test_compound_khong_is_not_negation():
     b = "Máy bay của hãng hàng không Qantas gặp nhiễu động mạnh trên không phận Australia."
     assert facts_compatible(a, b)
     assert dedupe_sentences([a, b]) == [b]
+
+
+# --------------------------------------------------------------------------- batch + dùng lại tóm tắt chunk
+def _concat_summarizer(cfg, data_cfg, **ld):  # noqa: F811
+    cfg = copy.deepcopy(cfg)
+    cfg["max_input_tokens"] = 40
+    cfg["long_document"].update(chunk_max_tokens=30, overlap_tokens=5, hierarchical_above_tokens=100,
+                                reduce="concat", chunk_length="medium", **ld)
+    backend = FakeBackend()
+    return Summarizer(backend, cfg, data_cfg), backend
+
+
+def test_chunks_generated_in_batches(cfg, data_cfg, make_doc):  # noqa: F811
+    summ, backend = _concat_summarizer(cfg, data_cfg, chunk_batch_size=4, chunk_cache_size=0)
+    r = summ.summarize(make_doc(20)[0], length="short")
+    n_chunks = len(r.chunk_summaries)
+    assert n_chunks >= 5
+    assert [len(c[0]) for c in backend.calls] == [min(4, n_chunks - i) for i in range(0, n_chunks, 4)]
+    assert r.generate_calls == len(backend.calls) == -(-n_chunks // 4)
+
+
+def test_three_lengths_reuse_chunk_summaries(cfg, data_cfg, make_doc):  # noqa: F811
+    summ, backend = _concat_summarizer(cfg, data_cfg, chunk_batch_size=4, chunk_cache_size=4)
+    doc = make_doc(20)[0]
+    first = summ.summarize(doc, length="short")
+    calls_after_first = len(backend.calls)
+    others = [summ.summarize(doc, length=k) for k in ("medium", "long")]
+    assert not first.chunk_cache_hit and all(r.chunk_cache_hit for r in others)
+    assert len(backend.calls) == calls_after_first                     # không sinh lại chunk
+    assert all(r.generate_calls == 0 and r.chunk_summaries == first.chunk_summaries for r in others)
+    assert len(others[1].summary) >= len(first.summary)                # chỉ ngân sách chọn câu khác nhau
+    summ.summarize(make_doc(21)[0], length="short")                    # văn bản khác: sinh mới
+    assert len(backend.calls) > calls_after_first
+
+
+def test_chunk_cache_is_bounded_and_can_be_disabled(cfg, data_cfg, make_doc):  # noqa: F811
+    summ, backend = _concat_summarizer(cfg, data_cfg, chunk_cache_size=2)
+    docs = [make_doc(n)[0] for n in (18, 19, 20)]
+    for d in docs:
+        summ.summarize(d, length="short")
+    assert len(summ._chunk_cache) == 2
+    assert not summ.summarize(docs[0], length="short").chunk_cache_hit   # đã bị đẩy ra (LRU)
+    off, _ = _concat_summarizer(cfg, data_cfg, chunk_cache_size=0)
+    off.summarize(docs[1], length="short")
+    assert not off.summarize(docs[1], length="medium").chunk_cache_hit
+
+
+def test_streaming_backend_forces_batch_one(cfg, data_cfg):  # noqa: F811
+    from vnsum.api.streaming import StreamingBackend
+
+    summ, _ = _concat_summarizer(cfg, data_cfg, chunk_batch_size=8)
+    summ.backend = StreamingBackend(FakeBackend(), emit=lambda e: None, streamer_factory=lambda tok: iter(()))
+    assert summ._chunk_batch_size() == 1

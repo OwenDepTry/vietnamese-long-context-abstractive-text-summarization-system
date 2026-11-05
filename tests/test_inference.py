@@ -103,7 +103,7 @@ def small(cfg, data_cfg):
     cfg = copy.deepcopy(cfg)
     cfg["max_input_tokens"] = 40                     # ngân sách văn bản 39 "token" (1 từ = 1 token)
     cfg["long_document"].update(chunk_max_tokens=30, overlap_tokens=5, hierarchical_above_tokens=100,
-                                reduce="generate", chunk_length="short")
+                                reduce="generate", chunk_length="short", chunk_batch_size=1)
     backend = FakeBackend()
     return Summarizer(backend, cfg, data_cfg), backend, cfg
 

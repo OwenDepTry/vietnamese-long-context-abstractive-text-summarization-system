@@ -1,5 +1,7 @@
 # vnsum — Tóm tắt trừu tượng văn bản tiếng Việt dài
 
+[![tests](https://github.com/OwenDepTry/vietnamese-long-context-abstractive-text-summarization-system/actions/workflows/tests.yml/badge.svg)](https://github.com/OwenDepTry/vietnamese-long-context-abstractive-text-summarization-system/actions/workflows/tests.yml)
+
 ViT5-base (`VietAI/vit5-base`) fine-tune bằng LoRA trên VietNews + WikiLingua (tiếng Việt), xử lý văn bản dài hơn ngữ cảnh 1024 token, đánh giá bằng ROUGE giữ dấu / BERTScore PhoBERT / LLM-as-Judge, tối ưu inference bằng ONNX Runtime và đóng gói thành API + UI chạy bằng Docker.
 
 | Phase | Nội dung | Kết quả |
@@ -9,6 +11,7 @@ ViT5-base (`VietAI/vit5-base`) fine-tune bằng LoRA trên VietNews + WikiLingua
 | 3 | Evaluation: 4 hệ thống trên 1,910 mẫu test | [`results/report.md`](results/report.md), [`results/qualitative.md`](results/qualitative.md) |
 | 4 | Inference: ONNX (KV cache) + INT8, benchmark CPU/GPU | [`results/benchmark.md`](results/benchmark.md) |
 | 5 | API (FastAPI) + UI (Streamlit) + Docker | `src/vnsum/api/`, `ui/`, `docker-compose.yml` |
+| 6 | Model card + đưa model lên Hugging Face Hub, demo trên Spaces, CI | `scripts/push_to_hub.py`, `demo/`, `.github/workflows/` |
 
 ## Kiến trúc
 
@@ -50,7 +53,7 @@ ViT5-base (`VietAI/vit5-base`) fine-tune bằng LoRA trên VietNews + WikiLingua
 | GPU | PyTorch bf16 | 2,284 | 4,335 | 862 | 28.45 |
 | GPU | ONNX FP32 | 1,309 | 2,249 | 1,664 | 28.53 (+0.08) |
 
-Mục tiêu latency < 500 ms **không đạt** ở cấu hình trên (kể cả theo nhóm độ dài input). Benchmark dùng `strategy: extractive`, nên **chưa đo** đường xử lý mặc định hiện tại của API cho văn bản dài (`auto` → hierarchical concat, 2–4 lần sinh). INT8 giảm dung lượng trên đĩa (862 → 418 MB) nhưng gần như không giảm RAM đỉnh khi chạy.
+Mục tiêu latency < 500 ms **không đạt** ở cấu hình trên (kể cả theo nhóm độ dài input). Benchmark này dùng `strategy: extractive` (so backend trên cùng input). Đường xử lý thật của API (3 mức độ dài như UI, văn bản dài đi hierarchical concat) đo bằng `scripts/benchmark_pipeline.py` (xem Phase 4). INT8 giảm dung lượng trên đĩa (862 → 418 MB) nhưng gần như không giảm RAM đỉnh khi chạy.
 
 **Các thí nghiệm mở rộng** (đều so với ViT5 + LoRA ở trên, cùng tập test):
 
@@ -78,19 +81,33 @@ curl.exe -X POST localhost:8000/summarize -H "Content-Type: application/json" --
 
 ```
 configs/            data.yaml (phase 1) · train*.yaml (2) · eval.yaml (3) · inference.yaml (4–5, gồm mục api)
-scripts/            prepare_data · merge_lora · evaluate · human_eval · export_onnx · benchmark · profile_onnx · check_gpu_onnx · summarize
+scripts/            prepare_data · merge_lora · evaluate · human_eval · tune_lengths · length_control · distill_data · export_onnx
+                    benchmark · benchmark_pipeline · profile_onnx · check_gpu_onnx · summarize · push_to_hub
 src/vnsum/
   data/             phase 1: load, preprocess (NFC, dấu thanh, tách câu, lọc, dedup), long_context (BM25/LexRank, chunk), tokenization
   models/           phase 2: train (Seq2SeqTrainer + LoRA), lora, callbacks, rouge (tokenizer giữ dấu)
   eval/             phase 3: systems, metrics, bertscore, judge, llm_client, stats (bootstrap), report, human_eval
-  inference/        phase 4: predictor (Summarizer), export (ONNX/INT8/FP16), tokenizer, bench, hardware
+  inference/        phase 4: predictor (Summarizer), reduce (concat), export (ONNX/INT8/FP16), tokenizer, bench, pipeline_bench, hardware
+  model_card.py     model card cho Hugging Face Hub, sinh từ results/metrics.csv
   api/              phase 5: app (FastAPI), streaming (SSE), settings
 ui/app.py           phase 5: Streamlit, chỉ gọi API qua HTTP
 docker/             api.Dockerfile (multi-stage, CPU, non-root) · ui.Dockerfile
+demo/space/         demo trên Hugging Face Spaces (Docker: API + UI, model tải từ Hub)
+.github/workflows/  CI: test offline (Python 3.11, 3.12) + ruff
 tests/              pytest offline (tokenizer / backend giả); test model thật tự skip khi thiếu thư viện hoặc mạng
 results/            report.md, qualitative.md, benchmark.md + file số liệu thô
-requirements*.txt   requirements.txt (phase 1–3) · -inference (4) · -api (5) · -ui (5)
+requirements*.txt   requirements.txt (phase 1–3) · -inference (4) · -api (5) · -ui (5) · -ci (CI, không có torch)
 ```
+
+### Môi trường đã kiểm chứng
+
+| | Train / đánh giá (`.venv`) | Inference ONNX / API (`.venv-onnx`) |
+|---|---|---|
+| Máy | Windows 11, i7-13620H, RTX 4050 Laptop 6GB | như bên trái |
+| Python | 3.13.12 | 3.13 |
+| Thư viện chính | torch 2.14.1+cu130, transformers 5.16.1, peft 0.21.2, pandas 2.3.3, rouge-score 0.1.2, underthesea 9.5.0 | transformers 4.57.6, optimum-onnx 0.1.0, onnxruntime 1.23.x (theo `requirements-inference.txt`) |
+
+Cột trái lấy từ `results/long_v2/run_info.json`; từ nay mỗi lần `scripts/evaluate.py` ghi `run_info.json` (commit Git, config, phiên bản thư viện, danh tính model) cạnh kết quả. Hai môi trường tách riêng vì `optimum-onnx` cần transformers < 4.58. CI chạy test offline trên Linux, Python 3.11 và 3.12, không có torch.
 
 ## Phase 1 — Dữ liệu
 
@@ -213,6 +230,19 @@ python scripts/benchmark.py --config configs/inference.yaml --model_path <model 
 - **Đo thêm cấu hình:** `--num_beams 1` (greedy), `--length short`, `--tag <tên>` để ghi ra `results/benchmark_<tên>.md` mà không ghi đè bản chính.
 - **FP16 không dùng được:** chuyển FP32 → FP16 (2 lần thử, lần 2 giữ LayerNorm/residual/softmax/FFN đầu ra ở FP32) đều cho chuỗi vô nghĩa, trong khi ONNX FP32 trên cùng GPU cho kết quả đúng (`scripts/check_gpu_onnx.py`). Cờ `--fp16` vẫn còn nhưng không nằm trong benchmark.
 
+### Benchmark đường xử lý của API
+
+```powershell
+python scripts/benchmark_pipeline.py --config configs/inference.yaml --model_path C:/vnsum-runs/vit5-vnsum-merged
+# nhanh: --n_short 5 --n_long 5 ; ONNX: --backend onnx
+```
+
+Mô phỏng đúng việc UI làm: 3 request (short, medium, long) cho cùng văn bản, config của API (văn bản > 1024 token đi
+hierarchical concat). So hai biến thể trên cùng tài liệu: **cũ** (tóm tắt chunk từng cái, mỗi mức độ dài sinh lại) và
+**hiện tại** (`long_document.chunk_batch_size`: sinh chunk theo batch; `chunk_cache_size`: nhớ bản tóm tắt chunk của
+văn bản gần nhất, nên mức độ dài thứ 2 và 3 không sinh lại). Báo latency theo chiến lược, tổng thời gian chờ cho 3
+mức, theo số chunk, và % bản tóm tắt giống hệt nhau giữa hai biến thể → `results/pipeline_benchmark.md`.
+
 ## Phase 5 — API, UI, Docker
 
 ### API (FastAPI)
@@ -258,10 +288,29 @@ Nhập văn bản, bấm **Tóm tắt**: UI gọi `/summarize` ba lần (short, 
 ### Test
 
 ```powershell
+python -m pytest                                               # mọi test; test thiếu thư viện / model tự bỏ qua
 python -m pytest tests/test_api.py tests/test_inference.py     # trong .venv-onnx (cần requirements-api.txt)
+ruff check .
 ```
 
 `tests/test_api.py` dùng `TestClient` với `Summarizer` thật nhưng backend giả, nên không cần model.
+
+**CI** (`.github/workflows/tests.yml`) chạy trên mỗi push / pull request: `pytest` với `requirements-ci.txt` (không
+torch / transformers / onnxruntime) trên Python 3.11 và 3.12, và `ruff check` (chỉ lỗi thật: cú pháp, tên chưa
+định nghĩa, import thừa). Các test cần thư viện nặng hoặc model thật tự bỏ qua trên CI (`pytest -ra` in lý do) và
+cần chạy trên máy có GPU: `tests/test_vit5_tokenizer.py`, phần ONNX của `tests/test_inference.py`, phần train của
+`tests/test_training_setup.py`, và test BERTScore / sinh thật trong `tests/test_eval.py`.
+
+## Model trên Hugging Face Hub và demo
+
+```powershell
+python scripts/push_to_hub.py --repo_id <tài-khoản>/vit5-vnsum --model_dir C:/vnsum-runs/vit5-vnsum-merged --onnx_dir C:/vnsum-runs/vit5-vnsum-merged-onnx/int8
+# chạy thử: chỉ ghi results/model_card.md và liệt kê file. Đọc lại, rồi thêm --push (cần huggingface-cli login).
+```
+
+Model card sinh từ `results/metrics.csv` (`src/vnsum/model_card.py`), gồm số đánh giá, cách dùng, giới hạn và giấy
+phép dữ liệu. Repo mới tạo ở chế độ **private**; chỉ thêm `--public` khi đã kiểm tra giấy phép của VietNews. Demo trên
+Hugging Face Spaces (Docker, CPU): xem [`demo/README.md`](demo/README.md).
 
 ## Giới hạn còn lại
 
