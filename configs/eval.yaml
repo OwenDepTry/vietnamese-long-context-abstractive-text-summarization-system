@@ -128,7 +128,7 @@ systems:
     max_source_length: 1024
     source_prefix: ""
     generation:                      # ghi đè generation chung cho riêng hệ thống này
-      min_new_tokens: 0              # <- thay bằng giá trị trong results/tune_lengths.md
+      min_new_tokens: 64              # <- thay bằng giá trị trong results/tune_lengths.md
       length_penalty: 1.0            # <- thay bằng giá trị trong results/tune_lengths.md
 
   # Bước mở rộng B: model sau distillation. Chạy riêng, đường dẫn truyền bằng --system_model:

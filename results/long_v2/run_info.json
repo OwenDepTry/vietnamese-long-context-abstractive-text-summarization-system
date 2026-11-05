@@ -1,5 +1,5 @@
 {
-  "created_utc": "2026-11-05T13:52:47+00:00",
+  "created_utc": "2026-11-05T14:06:23+00:00",
   "argv": [
     "scripts/evaluate.py",
     "--config",
@@ -7,15 +7,15 @@
     "--subset",
     "long",
     "--systems",
-    "vit5_lora,vit5_lora_hier128,vit5_lora_hier_concat",
+    "vit5_lora,vit5_lora_tuned,vit5_lora_hier_concat",
     "--model_path",
     "C:/vnsum-runs/vit5-vnsum-merged",
     "--results_dir",
     "results/long_v2"
   ],
   "git": {
-    "commit": "0364b98802325c3b61ac4e7ff3b9631cf9ccd43a",
-    "dirty": false
+    "commit": "3c9937bdbb1979c96d1fc2977c0dc310f08c1cd5",
+    "dirty": true
   },
   "python": "3.13.12",
   "platform": "Windows-11-10.0.26200-SP0",
@@ -36,15 +36,15 @@
       "model_identity": "sha256:edf890d3b10f90c7",
       "fingerprint": "8e66a0fdc13fc369"
     },
-    "vit5_lora_hier128": {
-      "model_path": "C:/vnsum-runs/vit5-vnsum-merged",
-      "model_identity": "sha256:edf890d3b10f90c7",
-      "fingerprint": "2ad3411c832a3299"
-    },
     "vit5_lora_hier_concat": {
       "model_path": "C:/vnsum-runs/vit5-vnsum-merged",
       "model_identity": "sha256:edf890d3b10f90c7",
       "fingerprint": "555728c6abe29150"
+    },
+    "vit5_lora_tuned": {
+      "model_path": "C:/vnsum-runs/vit5-vnsum-merged",
+      "model_identity": "sha256:edf890d3b10f90c7",
+      "fingerprint": "f836db1e194776e8"
     }
   },
   "config": {
@@ -154,7 +154,7 @@
         "max_source_length": 1024,
         "source_prefix": "",
         "generation": {
-          "min_new_tokens": 0,
+          "min_new_tokens": 64,
           "length_penalty": 1.0
         }
       },
