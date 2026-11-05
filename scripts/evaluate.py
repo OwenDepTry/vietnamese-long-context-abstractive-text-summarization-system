@@ -33,7 +33,8 @@ from vnsum.eval.llm_client import ApiGate  # noqa: E402
 from vnsum.eval.metrics import aux_per_sample, rouge_per_sample  # noqa: E402
 from vnsum.eval.report import aggregate, write_qualitative, write_report  # noqa: E402
 from vnsum.eval.stats import compute_significance  # noqa: E402
-from vnsum.eval.systems import run_system  # noqa: E402
+from vnsum.eval.run_info import write_run_info  # noqa: E402
+from vnsum.eval.systems import model_identity, run_system, system_fingerprint  # noqa: E402
 
 logger = logging.getLogger("evaluate")
 
@@ -105,6 +106,7 @@ def main(argv=None) -> int:
     if unknown:
         raise SystemExit(f"--system_model: không có hệ thống {unknown} trong config")
     predictions: dict[str, dict[str, str]] = {}
+    run_systems: dict[str, dict[str, str | None]] = {}
     system_info: dict[str, str] = {}
     skipped: dict[str, str] = {}
     for name, sys_cfg in cfg["systems"].items():
@@ -135,10 +137,13 @@ def main(argv=None) -> int:
             system_info.pop(name, None)
             continue
         predictions[name] = preds
+        run_systems[name] = {"model_path": model_path, "model_identity": model_identity(model_path),
+                             "fingerprint": system_fingerprint(name, sys_cfg, cfg, model_path)}
 
     if not predictions:
         print("Không có hệ thống nào có dự đoán; dừng.")
         return 1
+    write_run_info(results_dir / "run_info.json", argv=sys.argv, cfg=cfg, systems=run_systems, n_samples=len(eval_df))
 
     # ----- ROUGE + chỉ số phụ theo từng mẫu -----
     aux_cfg = cfg["aux_metrics"]

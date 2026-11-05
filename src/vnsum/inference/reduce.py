@@ -47,15 +47,72 @@ def overlap_ratio(a: str, b: str, n: int = 2) -> float:
     return len(small & big) / len(small)
 
 
+# Số, ngày, giờ, tỷ lệ: "100", "1.500", "22/5", "10:30", "3,5".
+_NUMBER_RE = re.compile(r"\d+(?:[.,/:\-]\d+)*")
+_NEGATIONS = frozenset({"không", "chưa", "chẳng", "chả", "đừng", "chớ"})
+# Từ ghép có "không" mà không mang nghĩa phủ định. Nhận nhầm chỉ khiến hai câu được GIỮ cả hai (an toàn).
+_NOT_NEGATION = frozenset({
+    ("hàng", "không"), ("phòng", "không"), ("không", "khí"), ("không", "gian"), ("không", "phận"),
+    ("không", "quân"), ("không", "trung"), ("không", "lưu"), ("không", "chiến"), ("không", "kích"),
+    ("không", "vận"), ("không", "ảnh"),
+})
+
+
+def _facts(sentence: str) -> tuple[frozenset[str], frozenset[str], frozenset[str]]:
+    """(số/ngày, tên riêng, từ phủ định) của một câu — những thứ mà hai câu giống chữ vẫn có thể khác nhau."""
+    text = unicodedata.normalize("NFC", sentence)
+    numbers = frozenset(_NUMBER_RE.findall(text))
+    words = _WORD_RE.findall(text)
+    # Tên riêng: âm tiết viết hoa, trừ âm tiết đầu câu.
+    names = frozenset(w for w in words[1:] if w[:1].isupper() and not w.isdigit())
+    low = [w.lower() for w in words]
+    neg = set()
+    for k, w in enumerate(low):
+        if w not in _NEGATIONS:
+            continue
+        prev_pair = (low[k - 1], w) if k else None
+        next_pair = (w, low[k + 1]) if k + 1 < len(low) else None
+        if prev_pair not in _NOT_NEGATION and next_pair not in _NOT_NEGATION:
+            neg.add(w)
+    return numbers, names, frozenset(neg)
+
+
+def facts_compatible(dropped: str, kept: str) -> bool:
+    """Có bỏ được ``dropped`` mà giữ ``kept`` không: mọi số và tên riêng của câu bị bỏ phải có trong câu được
+    giữ, và hai câu phải có cùng từ phủ định ("đã xác nhận" ≠ "chưa xác nhận")."""
+    num_d, name_d, neg_d = _facts(dropped)
+    num_k, name_k, neg_k = _facts(kept)
+    return num_d <= num_k and name_d <= name_k and neg_d == neg_k
+
+
+def _same_text(a: str, b: str) -> bool:
+    return _syllables(a) == _syllables(b)
+
+
 def dedupe_sentences(sentences: Sequence[str], threshold: float = 0.6, n: int = 2) -> list[str]:
     """Bỏ câu trùng / gần trùng, giữ thứ tự. Khi hai câu trùng, giữ câu DÀI hơn (nhiều thông tin hơn)
-    ở vị trí của câu xuất hiện trước."""
+    ở vị trí của câu xuất hiện trước.
+
+    Gần trùng = tỷ lệ bigram ≥ ``threshold`` VÀ câu bị bỏ không mang thông tin mà câu được giữ thiếu
+    (``facts_compatible``). Giống chữ chưa chắc giống thông tin: "doanh thu năm 2023 đạt 100 tỷ" và
+    "... năm 2024 đạt 200 tỷ" giống 80% bigram nhưng là hai sự kiện. Khi không chắc thì giữ cả hai; bước
+    chọn câu phía sau vẫn cắt theo ngân sách.
+    """
     kept: list[str] = []
     for s in sentences:
         s = s.strip()
         if not _syllables(s):
             continue
-        dup = next((k for k, t in enumerate(kept) if overlap_ratio(s, t, n) >= threshold), None)
+
+        def _dup(t: str) -> bool:
+            if _same_text(s, t):
+                return True
+            if overlap_ratio(s, t, n) < threshold:
+                return False
+            shorter, longer = (s, t) if len(_syllables(s)) <= len(_syllables(t)) else (t, s)
+            return facts_compatible(shorter, longer)
+
+        dup = next((k for k, t in enumerate(kept) if _dup(t)), None)
         if dup is None:
             kept.append(s)
         elif len(_syllables(s)) > len(_syllables(kept[dup])):

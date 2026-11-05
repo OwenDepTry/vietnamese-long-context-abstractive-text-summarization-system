@@ -50,7 +50,18 @@ ViT5-base (`VietAI/vit5-base`) fine-tune bằng LoRA trên VietNews + WikiLingua
 | GPU | PyTorch bf16 | 2,284 | 4,335 | 862 | 28.45 |
 | GPU | ONNX FP32 | 1,309 | 2,249 | 1,664 | 28.53 (+0.08) |
 
-Mục tiêu latency < 500 ms **không đạt** ở cấu hình trên (kể cả theo nhóm độ dài input).
+Mục tiêu latency < 500 ms **không đạt** ở cấu hình trên (kể cả theo nhóm độ dài input). Benchmark dùng `strategy: extractive`, nên **chưa đo** đường xử lý mặc định hiện tại của API cho văn bản dài (`auto` → hierarchical concat, 2–4 lần sinh). INT8 giảm dung lượng trên đĩa (862 → 418 MB) nhưng gần như không giảm RAM đỉnh khi chạy.
+
+**Các thí nghiệm mở rộng** (đều so với ViT5 + LoRA ở trên, cùng tập test):
+
+| Thí nghiệm | Kết quả | Chi tiết |
+|---|---|---|
+| Văn bản dài: ghép bản tóm tắt chunk thay vì tóm tắt lại (`reduce: concat`) | ROUGE-L 22.25 so với 20.70 (extractive) và 13.48 (tóm tắt lại), trên 225 văn bản dài. **Chưa đối chứng ở cùng ngân sách** (xem Giới hạn) | [`results/long/report.md`](results/long/report.md) |
+| Tune `length_penalty` / `min_new_tokens` trên validation | +0.23 ROUGE-L, nằm trong nhiễu → giữ cấu hình cũ | [`results/tune_lengths.md`](results/tune_lengths.md) |
+| Distillation: train tiếp trên 4,999 bản tóm tắt do LLM viết | **Kém hơn**: ROUGE-L 24.33 so với 26.98 (−2.65, CI 95% [2.08, 3.21]), kém ở mọi tập con; dài hơn (35.2 so với 26.8 âm tiết) nhưng lệch văn phong reference. Chưa chấm faithfulness | [`results/distill/report.md`](results/distill/report.md) |
+| Đối chiếu LLM judge với người chấm (50 mục, chấm mù) | Kappa trọng số 0.70 (CI 95% [0.49, 0.85]), trùng khớp 66%, lệch ≤ 1 điểm 84% | [`results/human_eval/agreement.md`](results/human_eval/agreement.md) |
+
+Hai kết quả âm tính (tune độ dài, distillation) cho thấy làm bản tóm tắt dài hơn hoặc trừu tượng hơn **không** tự động cải thiện điểm so với reference.
 
 ## Chạy nhanh bằng Docker (phase 5)
 
@@ -258,8 +269,11 @@ python -m pytest tests/test_api.py tests/test_inference.py     # trong .venv-onn
 - **Ngoài miền dữ liệu train** (tin tức VietNews, hướng dẫn wikiHow), ví dụ văn bản hành chính dạng danh sách, model thường chỉ chép câu mở đầu — thói quen học từ tin tức, nơi câu đầu thường là tóm tắt tốt.
 - Latency < 500 ms chưa đạt ở cấu hình đã đo (beam 4, batch 1); greedy, mức `short` hay batch lớn hơn chưa được benchmark.
 - Docker image chỉ có bản CPU; GPU (ONNX FP32 nhanh nhất trong benchmark) mới chạy được ngoài Docker.
-- Văn bản dài: bước reduce kiểu cũ (`generate`, tóm tắt lại bản ghép các chunk) nén hai lần và kém hơn extractive. Mặc định nay là `reduce: concat` (ghép bản tóm tắt chunk, bỏ câu trùng, chọn câu theo ngân sách; `src/vnsum/inference/reduce.py`) cho mọi văn bản > 1024 token. Trên 225 văn bản dài, ROUGE-L: concat **22.25**, extractive 20.70, generate 13.48 (`results/long/report.md`). Faithfulness của concat chưa được judge chấm; mỗi văn bản dài tốn 2–4 lần sinh nên latency cao hơn extractive.
-- Faithfulness của judge chưa được đối chiếu với người chấm (công cụ `scripts/human_eval.py` đã có).
+- **Văn bản dài:** "long-context" ở đây là khả năng của pipeline chia/lọc văn bản; mỗi lần ViT5 vẫn chỉ nhận ≤ 1,024 token. Mặc định `reduce: concat` (ghép bản tóm tắt chunk, bỏ câu trùng, chọn câu theo ngân sách; `src/vnsum/inference/reduce.py`). So sánh concat với các cách khác **có yếu tố gây nhiễu**: bản tóm tắt lại dùng chunk 48 token còn concat dùng 128, và concat dài hơn extractive (53.8 so với 30.8 âm tiết). Cần đối chứng với `vit5_lora_hier128` (cùng chunk 128 token) trước khi kết luận về riêng bước reduce. Nhóm dài chỉ có 225/1,910 mẫu. Faithfulness của concat chưa được chấm.
+- **Bỏ câu trùng (đã sửa):** bản đầu chỉ so tỷ lệ bigram nên gộp nhầm câu khác số liệu ("doanh thu 2023 đạt 100 tỷ" / "2024 đạt 200 tỷ") hoặc khác phủ định ("đã" / "chưa xác nhận"). Nay câu chỉ bị bỏ khi mọi số, ngày, tên riêng của nó có trong câu được giữ và hai câu cùng phủ định (`tests/test_reduce.py`). Kết quả 22.25 ở trên được đo **trước** bản sửa.
+- **Human eval:** một người chấm, 50 mục, kappa 0.70 là kiểm tra ban đầu, chưa đủ để khẳng định judge đáng tin trong mọi trường hợp. Đối chiếu lại với văn bản gốc, 3/8 mục bất đồng nặng là lỗi sự thật mà người chấm bỏ sót (H020 gán nhầm độ cao 10.000 m cho chuyến QF94; H038 gán sai ngày 25/8/2017; H027 thêm chức danh không có trong bài), 2/8 là judge quá khắt khe (H004, H033), 3/8 cả hai cùng lệch. Điểm người chấm được giữ nguyên (đã chấm mù); cần thêm người chấm độc lập, và đánh giá thêm độ đầy đủ và mạch lạc.
+- **ViT5 + LoRA thua ViT5 công khai riêng trên VietNews** (ROUGE-L 26.75 so với 32.11); chỉ hơn trên tập hỗn hợp nhờ WikiLingua. Không kiểm chứng được model công khai có train trên tập test VietNews hay không.
+- **Cache dự đoán (đã sửa):** trước đây khóa cache chỉ gồm config + đường dẫn model + id mẫu, nên sửa dữ liệu (giữ id) hoặc ghi đè trọng số trong cùng thư mục vẫn trả dự đoán cũ. Nay cache kiểm tra thêm hash input của từng mẫu và hash trọng số model; mỗi lần đánh giá ghi `run_info.json` (commit Git, config, phiên bản thư viện, danh tính model). Dự đoán LLM cũ (trả phí) chưa có hash input vẫn được dùng lại, kèm cảnh báo.
 - API không có xác thực hay giới hạn tần suất request: chỉ dùng cho demo / mạng nội bộ.
 
 ## Giấy phép dữ liệu

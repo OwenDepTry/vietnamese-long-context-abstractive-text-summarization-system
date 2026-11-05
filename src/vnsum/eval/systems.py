@@ -30,14 +30,29 @@ def fingerprint(obj: Any) -> str:
     return hashlib.sha1(json.dumps(obj, sort_keys=True, ensure_ascii=False, default=str).encode("utf-8")).hexdigest()[:16]
 
 
-class PredictionCache:
-    """``<dir>/<system>.jsonl``: mỗi dòng ``{id, prediction, fp}``. Chỉ dùng lại dòng có cùng fingerprint."""
+def input_hash(text: str) -> str:
+    """Hash nội dung input của MỘT mẫu (sau tiền xử lý), lưu kèm từng dự đoán trong cache."""
+    return hashlib.sha1((text or "").encode("utf-8")).hexdigest()[:12]
 
-    def __init__(self, directory: str | Path, system: str, fp: str) -> None:
+
+class PredictionCache:
+    """``<dir>/<system>.jsonl``: mỗi dòng ``{id, prediction, fp, in}``.
+
+    Một dòng chỉ được dùng lại khi cùng fingerprint hệ thống (``fp``: config + checkpoint + phiên bản pipeline)
+    VÀ cùng hash nội dung input (``in``) của mẫu đó. Trước đây khóa chỉ là (fp, id): sửa dữ liệu mà giữ nguyên
+    id thì cache vẫn trả dự đoán cũ.
+
+    ``accept_legacy``: dòng cũ không có ``in`` (ghi trước khi có kiểm tra này) có được dùng lại không. Chỉ nên
+    bật cho hệ thống gọi API trả phí; số dòng như vậy được ghi vào ``legacy_used`` để cảnh báo.
+    """
+
+    def __init__(self, directory: str | Path, system: str, fp: str, *, accept_legacy: bool = False) -> None:
         self.path = Path(directory) / f"{system}.jsonl"
         self.fp = fp
+        self.accept_legacy = accept_legacy
         self._lock = threading.Lock()
         self.data: dict[str, str] = {}
+        self._in: dict[str, str | None] = {}
         if self.path.exists():
             with self.path.open(encoding="utf-8") as f:
                 for line in f:
@@ -46,17 +61,39 @@ class PredictionCache:
                     row = json.loads(line)
                     if row.get("fp") == fp:
                         self.data[str(row["id"])] = row["prediction"]
+                        self._in[str(row["id"])] = row.get("in")
+        self.legacy_used = 0
 
-    def missing(self, ids: Sequence[str]) -> list[str]:
-        return [i for i in ids if str(i) not in self.data]
+    def _valid(self, i: str, h: str | None) -> bool:
+        if i not in self.data:
+            return False
+        if h is None:
+            return True
+        stored = self._in.get(i)
+        if stored is None:
+            return self.accept_legacy
+        return stored == h
 
-    def add(self, items: dict[str, str]) -> None:
+    def missing(self, ids: Sequence[str], input_hashes: Sequence[str] | None = None) -> list[str]:
+        hashes = list(input_hashes) if input_hashes is not None else [None] * len(ids)
+        out = [str(i) for i, h in zip(ids, hashes) if not self._valid(str(i), h)]
+        if input_hashes is not None:
+            self.legacy_used = sum(1 for i in ids if str(i) not in out and self._in.get(str(i)) is None)
+        return out
+
+    def add(self, items: dict[str, str], input_hashes: dict[str, str] | None = None) -> None:
         with self._lock:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with self.path.open("a", encoding="utf-8") as f:
                 for i, pred in items.items():
-                    self.data[str(i)] = pred
-                    f.write(json.dumps({"id": str(i), "prediction": pred, "fp": self.fp}, ensure_ascii=False) + "\n")
+                    i = str(i)
+                    h = (input_hashes or {}).get(i)
+                    self.data[i] = pred
+                    self._in[i] = h
+                    row = {"id": i, "prediction": pred, "fp": self.fp}
+                    if h is not None:
+                        row["in"] = h
+                    f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
 # --------------------------------------------------------------------------- #
@@ -330,14 +367,15 @@ def build_llm_prompt(template: str, document: str, max_chars: int) -> str:
 
 
 def generate_llm(
-    ids: Sequence[str], texts: Sequence[str], client: LLMClient, template: str, max_chars: int, cache: PredictionCache
+    ids: Sequence[str], texts: Sequence[str], client: LLMClient, template: str, max_chars: int, cache: PredictionCache,
+    input_hashes: dict[str, str] | None = None,
 ) -> None:
     """Gọi API cho từng văn bản; ghi cache ngay sau mỗi request (dừng giữa chừng không mất phần đã trả phí)."""
 
     def _one(pair: tuple[str, str]) -> None:
         i, doc = pair
         text, _ = client.complete(build_llm_prompt(template, doc, max_chars))
-        cache.add({i: text})
+        cache.add({i: text}, input_hashes)
 
     client.map(list(zip(ids, texts)), _one)
 
@@ -347,17 +385,59 @@ def generate_llm(
 # --------------------------------------------------------------------------- #
 
 
+# Tăng khi đổi code sinh / reduce / tiền xử lý của hệ thống seq2seq mà config không đổi
+# (vd. 2: sửa dedupe của reduce concat) -> cache dự đoán cũ không bị dùng lại.
+PIPELINE_VERSION = 2
+
+_MODEL_HASHES: dict[str, str] = {}
+_WEIGHT_SUFFIXES = (".safetensors", ".bin", ".pt")
+
+
+def model_identity(model_path: str | None) -> str | None:
+    """Danh tính checkpoint: thư mục model trên máy -> hash nội dung config + trọng số (không phụ thuộc đường
+    dẫn, nên chuyển thư mục model không làm mất cache, còn ghi đè trọng số thì có). Model trên HF Hub -> giữ
+    nguyên tên (không kiểm tra revision)."""
+    if not model_path:
+        return model_path
+    p = Path(model_path)
+    if not p.is_dir():
+        return model_path
+    key = str(p.resolve())
+    if key not in _MODEL_HASHES:
+        h = hashlib.sha256()
+        files = sorted(f for f in p.iterdir() if f.is_file() and (f.name == "config.json" or f.suffix in _WEIGHT_SUFFIXES))
+        if not files:
+            return model_path
+        for f in files:
+            h.update(f.name.encode("utf-8"))
+            with f.open("rb") as fh:
+                for block in iter(lambda: fh.read(1 << 20), b""):
+                    h.update(block)
+        _MODEL_HASHES[key] = "sha256:" + h.hexdigest()[:16]
+    return _MODEL_HASHES[key]
+
+
 def system_fingerprint(name: str, sys_cfg: dict[str, Any], cfg: dict[str, Any], model_path: str | None) -> str:
     # display_name/description chỉ ảnh hưởng report -> không làm mất cache dự đoán khi đổi tên.
     shown = {k: v for k, v in sys_cfg.items() if k not in ("display_name", "description")}
     payload: dict[str, Any] = {"name": name, "system": shown, "model_path": model_path}
     if sys_cfg["type"] == "seq2seq":
+        payload["model_path"] = model_identity(model_path)
+        payload["pipeline_version"] = PIPELINE_VERSION
         payload["generation"] = {k: v for k, v in cfg["generation"].items() if k != "batch_size"}
     if sys_cfg["type"] == "llm":
         client = dict(cfg["llm"][sys_cfg["client"]])
         client.pop("concurrency", None)
         payload["llm"] = client
     return fingerprint(payload)
+
+
+def sample_input_hashes(df, sys_cfg: dict[str, Any]) -> list[str]:
+    """Hash input của từng mẫu: cột input của hệ thống, cộng document gốc khi chạy hierarchical."""
+    texts = df[sys_cfg["input_column"]].fillna("").astype(str)
+    if sys_cfg.get("long_strategy") == "hierarchical":
+        texts = texts + "\x00" + df["document"].fillna("").astype(str)
+    return [input_hash(t) for t in texts]
 
 
 def estimate_llm_requests(missing: int, texts: Sequence[str], max_chars: int) -> str:
@@ -377,8 +457,14 @@ def run_system(
 ) -> dict[str, str] | None:
     """Trả ``{id: prediction}`` cho mọi mẫu của ``df``; ``None`` nếu hệ thống bị bỏ qua (thiếu --allow_api)."""
     ids = [str(i) for i in df["id"]]
-    cache = PredictionCache(results_dir / "predictions", name, system_fingerprint(name, sys_cfg, cfg, model_path))
-    missing = set(cache.missing(ids))
+    is_llm = sys_cfg["type"] == "llm"
+    cache = PredictionCache(results_dir / "predictions", name, system_fingerprint(name, sys_cfg, cfg, model_path),
+                            accept_legacy=is_llm)
+    hashes = dict(zip(ids, sample_input_hashes(df, sys_cfg)))
+    missing = set(cache.missing(ids, [hashes[i] for i in ids]))
+    if cache.legacy_used:
+        logger.warning("%s: dùng lại %d dự đoán API từ cache cũ chưa có hash input (không kiểm tra được input có "
+                       "đổi hay không; xóa %s nếu dữ liệu đã thay đổi).", name, cache.legacy_used, cache.path)
     todo = df[df["id"].astype(str).isin(missing)]
     if len(todo):
         texts = todo[sys_cfg["input_column"]].fillna("").tolist()
@@ -399,12 +485,12 @@ def run_system(
                 return None
             print(f"[{name}] Gọi API: {estimate} tới {client_cfg['provider']}/{client_cfg['model']}")
             client = LLMClient(client_cfg, label=name, gate=gate)
-            generate_llm(todo["id"].astype(str).tolist(), texts, client, client_cfg["prompt"], max_chars, cache)
+            generate_llm(todo["id"].astype(str).tolist(), texts, client, client_cfg["prompt"], max_chars, cache, hashes)
             preds = None
         else:  # pragma: no cover - đã kiểm tra trong config
             raise ValueError(kind)
         if preds is not None:
-            cache.add(dict(zip(todo["id"].astype(str), preds)))
+            cache.add(dict(zip(todo["id"].astype(str), preds)), hashes)
         logger.info("%s: sinh mới %d, dùng cache %d", name, len(todo), len(ids) - len(todo))
     else:
         logger.info("%s: dùng toàn bộ %d dự đoán từ cache", name, len(ids))

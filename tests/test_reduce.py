@@ -12,7 +12,7 @@ from test_inference import FakeBackend, cfg, data_cfg  # noqa: F401  (fixture + 
 from vnsum.eval.config import EvalConfigError, load_eval_config, validate_eval_config
 from vnsum.inference.config import InferenceConfigError, validate_inference_config
 from vnsum.inference.predictor import Summarizer
-from vnsum.inference.reduce import dedupe_sentences, overlap_ratio, reduce_concat
+from vnsum.inference.reduce import dedupe_sentences, facts_compatible, overlap_ratio, reduce_concat
 
 SPLIT = lambda t: [s.strip() + "." for s in t.split(".") if s.strip()]  # noqa: E731
 
@@ -111,3 +111,29 @@ def test_eval_config_has_concat_system():
     sys_cfg["hierarchical"]["reduce"] = "x"
     with pytest.raises(EvalConfigError):
         validate_eval_config(cfg)
+
+
+# --------------------------------------------------------------------------- dedupe: giống chữ ≠ giống thông tin
+@pytest.mark.parametrize("a, b", [
+    ("Năm 2023, doanh thu của công ty đạt 100 tỷ đồng.", "Năm 2024, doanh thu của công ty đạt 200 tỷ đồng."),
+    ("Bộ Y tế đã xác nhận ca nhiễm mới tại Hà Nội.", "Bộ Y tế chưa xác nhận ca nhiễm mới tại Hà Nội."),
+    ("Ông Huệ rời Bosch Việt Nam.", "Ông Huệ không rời Bosch Việt Nam."),
+    ("Mưa lớn gây ngập nhiều tuyến đường ở Hà Nội hôm nay.", "Mưa lớn gây ngập nhiều tuyến đường ở Đà Nẵng hôm nay."),
+    ("Chuyến bay cất cánh lúc 10:30 ngày 22/5.", "Chuyến bay cất cánh lúc 11:45 ngày 22/5."),
+])
+def test_dedupe_keeps_sentences_with_different_facts(a, b):
+    assert overlap_ratio(a, b) >= 0.6                      # giống chữ: trước đây bị gộp làm một
+    assert dedupe_sentences([a, b]) == [a, b]
+
+
+def test_dedupe_still_merges_true_duplicates():
+    longer = "Năm 2023, doanh thu của công ty đạt 100 tỷ đồng, tăng mạnh so với năm trước."
+    assert dedupe_sentences(["Năm 2023, doanh thu của công ty đạt 100 tỷ đồng.", longer]) == [longer]
+    assert dedupe_sentences(["Hà Nội mưa to.", "hà nội  mưa to ."]) == ["Hà Nội mưa to."]   # trùng chính xác
+
+
+def test_compound_khong_is_not_negation():
+    a = "Máy bay của hãng hàng không Qantas gặp nhiễu động."
+    b = "Máy bay của hãng hàng không Qantas gặp nhiễu động mạnh trên không phận Australia."
+    assert facts_compatible(a, b)
+    assert dedupe_sentences([a, b]) == [b]
