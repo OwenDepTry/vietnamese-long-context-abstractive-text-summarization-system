@@ -243,6 +243,18 @@ hierarchical concat). So hai biến thể trên cùng tài liệu: **cũ** (tóm
 văn bản gần nhất, nên mức độ dài thứ 2 và 3 không sinh lại). Báo latency theo chiến lược, tổng thời gian chờ cho 3
 mức, theo số chunk, và % bản tóm tắt giống hệt nhau giữa hai biến thể → `results/pipeline_benchmark.md`.
 
+Kết quả (40 văn bản test: 20 ngắn, 20 dài; PyTorch bf16, RTX 4050 Laptop; [`results/pipeline_benchmark.md`](results/pipeline_benchmark.md)):
+
+| Tổng thời gian chờ cho 3 mức độ dài | Cũ: p50 / p95 (ms) | Hiện tại: p50 / p95 (ms) | Lần gọi model (cũ → hiện tại) |
+|---|---|---|---|
+| Văn bản ngắn (direct) | 2,721 / 3,363 | 2,806 / 3,545 | 3.0 → 3.0 |
+| Văn bản dài (hierarchical, 2–3 chunk) | 3,906 / 6,248 | **1,132 / 1,569** | 6.3 → 1.0 |
+
+Văn bản dài nhanh hơn ~3.4 lần: các chunk sinh chung một batch, mức medium và long dùng lại bản tóm tắt chunk. 92.5%
+request cho bản tóm tắt giống hệt cách cũ; phần khác đến từ padding khi sinh theo batch ở bf16 (đánh giá concat trên
+tập test cũng sinh chunk theo batch). Văn bản ngắn không đổi. Một request đơn lẻ vẫn mất ~0.9 s (p50, beam 4), chưa
+đạt mục tiêu < 500 ms. Chưa đo trên ONNX INT8 / CPU (cấu hình của Docker và demo).
+
 ## Phase 5 — API, UI, Docker
 
 ### API (FastAPI)
