@@ -426,7 +426,7 @@ def generate_llm(
 
 # Tăng khi đổi code sinh / reduce / tiền xử lý của hệ thống seq2seq mà config không đổi
 # (vd. 2: sửa dedupe của reduce concat) -> cache dự đoán cũ không bị dùng lại.
-PIPELINE_VERSION = 4   # 3: dedupe xét tên riêng đầu câu và thứ tự số liệu; 4: fingerprint gồm batch_size
+PIPELINE_VERSION = 5   # 3: dedupe xét tên đầu câu + thứ tự số; 4: fingerprint gồm batch_size; 5: factcheck bỏ qua chữ cái đơn
 
 _MODEL_HASHES: dict[tuple, str] = {}
 _WEIGHT_SUFFIXES = (".safetensors", ".bin", ".pt")

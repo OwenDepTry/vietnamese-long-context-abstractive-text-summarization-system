@@ -34,6 +34,7 @@ def test_flags_numbers_and_names_not_in_source(sentence, expected):
     "Nhận diện dấu hiệu sớm và trò chuyện thẳng thắn.",               # từ đầu câu viết hoa vì là đầu câu
     "Máy bay của hãng hàng không Qantas gặp nhiễu động.",
     "Luật sư Trần Đức Phượng cho biết dự án cần vay 420 tỷ.",
+    "Ăn nhiều thực phẩm giàu vitamin B. Giảm lượng đường.",          # chữ cái đơn + đầu câu bị bộ tách câu bỏ sót
 ])
 def test_does_not_flag_supported_sentences(sentence):
     assert unsupported_items(sentence, SourceIndex(DOC)) == []
@@ -143,4 +144,4 @@ def test_factcheck_report_script(tmp_path, monkeypatch):
     text = (res / "factcheck.md").read_text(encoding="utf-8")
     assert "| `s1` | 2 | 50.0 |" in text and "| `s2` | 2 | 50.0 |" in text
     assert "| Bị đánh dấu | 2 | 1.50 | 100.0 |" in text            # judge: 2 bản bị đánh dấu đều ≤ 2
-    assert "7/3/2015" in text and "Nguyễn Văn Phượng" in text and "người chấm" in text
+    assert "7/3/2015" in text and "Nguyễn Văn Phượng" in text and "người chấm (độc lập" in text

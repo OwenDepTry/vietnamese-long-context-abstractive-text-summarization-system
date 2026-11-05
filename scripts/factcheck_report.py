@@ -4,7 +4,8 @@
 * % bản tóm tắt có số / ngày / tên riêng không có trong văn bản gốc, theo hệ thống (và của reference).
 * Đối chiếu với điểm faithfulness của LLM judge (nếu per_sample.csv có): dữ liệu ĐỘC LẬP với 40 mục người chấm
   đã dùng để chỉnh quy tắc, nên đây mới là phép kiểm chứng khách quan.
-* Đối chiếu với điểm người chấm (human_eval/merged.csv, nếu có) — chỉ để tham khảo (đã dùng để chỉnh quy tắc).
+* Đối chiếu với điểm người chấm (human_eval/merged.csv, nếu có). Bộ 40 mục trong results/long_v2 đã dùng để chỉnh
+  quy tắc (chỉ tham khảo); bộ 50 mục trong results/human_eval thì độc lập.
 
     python scripts/factcheck_report.py --config configs/eval.yaml --results_dir results
     python scripts/factcheck_report.py --config configs/eval.yaml --results_dir results/long_v2
@@ -27,7 +28,7 @@ def _p(x: float) -> str:
     return f"{x:.1f}" if x == x else "—"
 
 
-def build_report(per_sample, documents, human=None) -> str:
+def build_report(per_sample, documents, human=None, results_dir="") -> str:
     import pandas as pd
 
     from vnsum.eval.metrics import unsupported_in
@@ -70,7 +71,9 @@ def build_report(per_sample, documents, human=None) -> str:
         h["id"] = h["id"].astype(str)
         h = h.merge(df[["system", "id", "flag"]], on=["system", "id"], how="inner")
         if len(h):
-            lines += ["", "## Đối chiếu với người chấm (tham khảo — đã dùng để chỉnh quy tắc)", "",
+            tuned = Path(str(results_dir)).name == "long_v2"
+            lines += ["", "## Đối chiếu với người chấm" + (" (tham khảo — bộ này đã dùng để chỉnh quy tắc)" if tuned
+                                                          else " (độc lập — không dùng để chỉnh quy tắc)"), "",
                       "| | n | Trung thực TB (người) |", "|---|---:|---:|"]
             for flag, label in ((True, "Bị đánh dấu"), (False, "Không bị đánh dấu")):
                 g = h[h["flag"] == flag]
@@ -101,7 +104,7 @@ def main(argv=None) -> int:
     documents = dict(zip(eval_df["id"].astype(str), eval_df["document"].fillna("")))
     merged = results / "human_eval" / "merged.csv"
     human = pd.read_csv(merged, encoding="utf-8-sig", dtype={"id": str}) if merged.exists() else None
-    report = build_report(per_sample, documents, human)
+    report = build_report(per_sample, documents, human, results)
     out = results / "factcheck.md"
     out.write_text(report, encoding="utf-8")
     print(report)

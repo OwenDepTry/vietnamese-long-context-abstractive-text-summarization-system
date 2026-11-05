@@ -103,9 +103,11 @@ long_document:
   # reduce concat lần 2 và 3 không phải sinh lại chunk. 0 = tắt.
   chunk_cache_size: 16
   # Bỏ câu có số / ngày / tên riêng không có trong văn bản gốc trước khi ghép (vnsum.factcheck): off | drop.
-  # Chấm người: concat đầy đủ hơn nhưng sai sự thật nhiều hơn extractive. Giữ off tới khi đánh giá
-  # vit5_lora_hier_concat_fc (configs/eval.yaml) cho thấy không làm giảm độ đầy đủ / ROUGE.
-  factcheck: "off"             # trong ngoặc kép: YAML đọc off (không ngoặc) thành false
+  # Chấm người: concat đầy đủ hơn nhưng sai sự thật nhiều hơn extractive. Đối chiếu độc lập với judge: bản bị
+  # đánh dấu có tỷ lệ judge ≤ 2 là 58% so với 14% (results/factcheck.md); bỏ câu không làm giảm ROUGE-L trên 225
+  # văn bản dài (−0.03, CI [−0.28, +0.19], results/long_fc). Có đánh dấu nhầm (vd. bài viết tắt "Bộ GTVT", bản
+  # tóm tắt viết đầy đủ) nên đôi khi mất một câu đúng. Đặt "off" để tắt (trong ngoặc kép: YAML đọc off thành false).
+  factcheck: drop
 
 benchmark:
   eval_config: configs/eval.yaml   # lấy tài liệu test giống hệt tập đánh giá phase 3

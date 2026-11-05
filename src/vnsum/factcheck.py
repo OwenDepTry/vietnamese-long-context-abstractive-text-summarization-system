@@ -88,8 +88,16 @@ def unsupported_items(sentence: str, src: SourceIndex) -> list[str]:
     runs: list[list[str]] = []
     cur: list[str] = []
     for k, w in enumerate(words):
+        if len(w) == 1:
+            # Chữ cái đơn ("vitamin B", "phương án A") không phải tên riêng; cắt chuỗi tên tại đây, vì từ viết hoa
+            # ngay sau nó thường là đầu câu mà bộ tách câu bỏ sót ("...vitamin B. Giảm lượng...").
+            if cur:
+                runs.append(cur)
+                cur = []
+            continue
         if w[:1].isupper() and not w.isdigit():
-            if k == 0 and not (w.isupper() and len(w) > 1):
+            prev_single = k > 0 and len(words[k - 1]) == 1
+            if (k == 0 or prev_single) and not (w.isupper() and len(w) > 1):
                 continue                                   # từ đầu câu: viết hoa vì là đầu câu
             cur.append(w)
         elif cur:
