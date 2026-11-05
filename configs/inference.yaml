@@ -68,6 +68,9 @@ lengths:
     min_new_tokens: 64
     length_penalty: 2.0
 default_length: medium
+# Trả kèm danh sách số / ngày / tên riêng trong bản tóm tắt không tìm thấy trong văn bản gốc (vnsum.factcheck), để
+# API / UI cảnh báo người dùng kiểm tra lại. Không sửa bản tóm tắt.
+factcheck_warnings: true
 
 # Tiền xử lý: dùng lại mục preprocess / sentence_split / long_context.extractive_filter của phase 1.
 data_config: configs/data.yaml
@@ -99,6 +102,10 @@ long_document:
   # Nhớ bản tóm tắt chunk của N văn bản gần nhất: UI gọi short / medium / long cho cùng văn bản, với
   # reduce concat lần 2 và 3 không phải sinh lại chunk. 0 = tắt.
   chunk_cache_size: 16
+  # Bỏ câu có số / ngày / tên riêng không có trong văn bản gốc trước khi ghép (vnsum.factcheck): off | drop.
+  # Chấm người: concat đầy đủ hơn nhưng sai sự thật nhiều hơn extractive. Giữ off tới khi đánh giá
+  # vit5_lora_hier_concat_fc (configs/eval.yaml) cho thấy không làm giảm độ đầy đủ / ROUGE.
+  factcheck: "off"             # trong ngoặc kép: YAML đọc off (không ngoặc) thành false
 
 benchmark:
   eval_config: configs/eval.yaml   # lấy tài liệu test giống hệt tập đánh giá phase 3

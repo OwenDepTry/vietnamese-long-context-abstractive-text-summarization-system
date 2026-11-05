@@ -73,6 +73,9 @@ def main() -> None:
                     st.error(res["error"])
                     continue
                 st.write(res["summary"])
+                if res.get("unsupported"):
+                    st.warning("Kiểm tra lại với văn bản gốc — không tìm thấy trong bài: "
+                               + ", ".join(res["unsupported"]))
                 reused = " · dùng lại tóm tắt chunk" if res.get("chunk_cache_hit") else ""
                 st.caption(f"{res['latency_ms']:,.0f} ms · {res['new_tokens']} token · chiến lược {res['strategy']}{reused}")
 

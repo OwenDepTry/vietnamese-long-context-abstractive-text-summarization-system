@@ -58,8 +58,22 @@ def novel_ngram_rate(summary: str, document: str, n: int) -> float:
     return 100.0 * len(grams - source) / len(grams)
 
 
-def aux_per_sample(summary: str, document: str, repetition_n: int, novel_ns: Sequence[int]) -> dict[str, float]:
+def aux_per_sample(summary: str, document: str, repetition_n: int, novel_ns: Sequence[int],
+                   *, factcheck: bool = False) -> dict[str, float]:
     row = {"length_syllables": float(len(syllables(summary))), f"repetition_{repetition_n}gram": repetition_rate(summary, repetition_n)}
     for n in novel_ns:
         row[f"novel_{n}gram"] = novel_ngram_rate(summary, document, n)
+    if factcheck:
+        # 100 nếu bản tóm tắt có số / ngày / tên riêng không tìm thấy trong văn bản gốc (vnsum.factcheck), trung
+        # bình theo hệ thống = % bản tóm tắt bị đánh dấu. Chỉ bắt lỗi bề mặt, không bắt lỗi quan hệ.
+        row["unsupported_pct"] = 100.0 if unsupported_in(summary, document) else 0.0
     return row
+
+
+def unsupported_in(summary: str, document: str) -> list[str]:
+    from vnsum.data.preprocess import split_sentences
+    from vnsum.factcheck import check_summary
+
+    if not (summary or "").strip():
+        return []
+    return [x for u in check_summary(summary, document, split_sentences).unsupported for x in u]

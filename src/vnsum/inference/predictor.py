@@ -228,6 +228,7 @@ class SummaryResult:
     chunk_summaries: list[str] = field(default_factory=list)
     model_input: str = ""
     chunk_cache_hit: bool = False       # bản tóm tắt chunk lấy lại từ lần gọi trước (cùng văn bản)
+    unsupported: list[str] = field(default_factory=list)   # số / ngày / tên riêng không có trong văn bản gốc
 
 
 class Summarizer:
@@ -320,6 +321,16 @@ class Summarizer:
         return parts, False
 
     def summarize(self, text: str, length: str | None = None, strategy: str | None = None) -> SummaryResult:
+        result = self._summarize(text, length, strategy)
+        if self.cfg.get("factcheck_warnings", True):
+            # Cảnh báo, không sửa bản tóm tắt: số / ngày / tên riêng không tìm thấy trong văn bản gốc.
+            from vnsum.factcheck import check_summary
+
+            fc = check_summary(result.summary, self.normalize(text), self.splitter)
+            result.unsupported = [x for u in fc.unsupported for x in u]
+        return result
+
+    def _summarize(self, text: str, length: str | None = None, strategy: str | None = None) -> SummaryResult:
         length = length or self.cfg["default_length"]
         generation_kwargs(self.cfg, length)  # kiểm tra length sớm
         strategy = strategy or self.cfg["long_document"]["strategy"]
@@ -383,6 +394,7 @@ class Summarizer:
             parts, splitter=self.splitter, count_tokens=self.counter.count, max_tokens=max_tokens,
             select=lambda text, n: self.extract(text, max_input_tokens=n + reserve),
             dedupe_threshold=float(ld.get("dedupe_threshold", 0.6)),
+            source=doc, factcheck=ld.get("factcheck", "off"),
         )
         joined = " ".join(p for p in parts if p)
         timings = {"preprocess_ms": t_pre, "generate_chunks_ms": gen_ms, "generate_ms": 0.0,

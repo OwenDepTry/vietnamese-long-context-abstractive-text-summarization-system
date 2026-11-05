@@ -77,6 +77,8 @@ class SummarizeResponse(BaseModel):
     new_tokens: int
     generate_calls: int
     chunk_cache_hit: bool = Field(default=False, description="dùng lại bản tóm tắt chunk của lần gọi trước (cùng văn bản)")
+    unsupported: list[str] = Field(default_factory=list,
+                                   description="số / ngày / tên riêng trong bản tóm tắt không có trong văn bản gốc — nên kiểm tra lại")
     backend: BackendInfo
 
 
@@ -174,7 +176,8 @@ def create_app(settings: ApiSettings | None = None, cfg: dict[str, Any] | None =
         return SummarizeResponse(
             request_id=rid, summary=r.summary, length=r.length, strategy=r.strategy, latency_ms=round(latency, 1),
             input_tokens=r.input_tokens, model_input_tokens=r.model_input_tokens, new_tokens=r.new_tokens,
-            generate_calls=r.generate_calls, chunk_cache_hit=r.chunk_cache_hit, backend=_backend_info(summ.backend),
+            generate_calls=r.generate_calls, chunk_cache_hit=r.chunk_cache_hit, unsupported=r.unsupported,
+            backend=_backend_info(summ.backend),
         )
 
     @app.post("/summarize/stream")
@@ -207,7 +210,7 @@ def create_app(settings: ApiSettings | None = None, cfg: dict[str, Any] | None =
                             r.new_tokens, latency)
                 emit({"type": "done", "request_id": rid, "summary": r.summary, "length": r.length,
                       "strategy": r.strategy, "latency_ms": round(latency, 1), "new_tokens": r.new_tokens,
-                      "generate_calls": r.generate_calls, "decoding": "greedy",
+                      "generate_calls": r.generate_calls, "unsupported": r.unsupported, "decoding": "greedy",
                       "backend": _backend_info(base.backend).model_dump()})
             except Exception as err:
                 logger.exception("stream lỗi")

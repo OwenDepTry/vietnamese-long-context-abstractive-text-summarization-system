@@ -60,6 +60,10 @@ def validate_inference_config(cfg: dict[str, Any]) -> None:
         raise InferenceConfigError("long_document.chunk_batch_size phải ≥ 1")
     if int(ld.get("chunk_cache_size", 0)) < 0:
         raise InferenceConfigError("long_document.chunk_cache_size phải ≥ 0")
+    from vnsum.inference.reduce import factcheck_mode
+
+    if factcheck_mode(ld.get("factcheck", "off")) not in ("off", "drop"):
+        raise InferenceConfigError("long_document.factcheck phải là off | drop")
     if ld.get("reduce", "generate") not in ("generate", "concat"):
         raise InferenceConfigError("long_document.reduce phải là generate | concat")
     if not 0.0 < float(ld.get("dedupe_threshold", 0.6)) <= 1.0:

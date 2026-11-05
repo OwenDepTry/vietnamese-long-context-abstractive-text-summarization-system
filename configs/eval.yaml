@@ -139,6 +139,29 @@ systems:
       final_max_tokens: 128
       dedupe_threshold: 0.6
 
+  # Như vit5_lora_hier_concat + bỏ câu có số / ngày / tên riêng không có trong văn bản gốc (vnsum.factcheck).
+  # Chấm người: concat đầy đủ hơn nhưng kém trung thực hơn extractive; đo xem bỏ câu không căn cứ có giảm lỗi mà
+  # không mất độ đầy đủ / ROUGE không. Chỉ bắt lỗi số / tên, không bắt lỗi quan hệ.
+  vit5_lora_hier_concat_fc:
+    enabled: false
+    type: seq2seq
+    description: "ViT5 + LoRA, văn bản dài: concat + bỏ câu có số/tên không căn cứ"
+    model_path: null
+    input_column: input_text
+    max_source_length: 1024
+    source_prefix: ""
+    long_strategy: hierarchical
+    hierarchical:
+      data_config: configs/data.yaml
+      chunk_max_tokens: 1024
+      overlap_tokens: 64
+      chunk_max_new_tokens: 128
+      max_rounds: 1
+      reduce: concat
+      final_max_tokens: 128
+      dedupe_threshold: 0.6
+      factcheck: drop
+
   # ĐÚNG đường xử lý của API: Summarizer + configs/inference.yaml (chuẩn hóa, chọn chiến lược, sinh chunk theo
   # long_document.chunk_batch_size TRONG từng văn bản, reduce concat), trên văn bản gốc, từng văn bản như request.
   # Các hệ thống seq2seq ở trên dùng input đã lọc sẵn và batch gom nhiều văn bản; hệ thống này kiểm tra cái người
@@ -255,7 +278,7 @@ judge:
   # 200 mẫu cũ lấy từ cache. Chi phí judge (Sonnet 4.6, $3/$15 mỗi 1M token) ~ $8 cho 200 mẫu x 4 hệ thống.
   sample_size: 200
   seed: 42
-  systems: [lead3, vit5_lora, vit5_public, llm_zeroshot, vit5_lora_hier, vit5_lora_hier_concat, vit5_lora_hier_concat_b1, vit5_lora_api, vit5_distill]
+  systems: [lead3, vit5_lora, vit5_public, llm_zeroshot, vit5_lora_hier, vit5_lora_hier_concat, vit5_lora_hier_concat_b1, vit5_lora_hier_concat_fc, vit5_lora_api, vit5_distill]
   max_document_chars: 30000    # document dài hơn bị cắt (ghi cờ truncated trong cache)
   prompt_version: v1           # đổi khi sửa rubric/prompt -> cache cũ không bị dùng lại
 
@@ -273,6 +296,7 @@ bertscore:
 aux_metrics:
   repetition_ngram: 3          # tỷ lệ trigram lặp lại TRONG summary
   novel_ngrams: [1, 2]         # tỷ lệ n-gram của summary KHÔNG có trong document gốc
+  factcheck: true              # % bản tóm tắt có số / ngày / tên riêng không có trong văn bản gốc (vnsum.factcheck)
 
 stats:
   bootstrap_samples: 1000      # số lần lấy lại mẫu cho CI

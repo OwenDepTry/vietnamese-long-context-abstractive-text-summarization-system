@@ -273,6 +273,7 @@ def hierarchical_concat_summaries(
     select,
     splitter,
     dedupe_threshold: float = 0.6,
+    factcheck: str = "off",
 ) -> list[str]:
     """Reduce ``concat``: tóm tắt mọi chunk của mọi văn bản trong MỘT lần gọi ``generate`` (batch), rồi
     ghép + bỏ câu trùng + chọn câu (≤ ``final_max_tokens``) — không sinh lại. Trả bản tóm tắt cuối.
@@ -292,7 +293,8 @@ def hierarchical_concat_summaries(
     for i, part in zip(owners, parts):
         per_doc[i].append(part)
     return [reduce_concat(p, splitter=splitter, count_tokens=counter.count, max_tokens=int(final_max_tokens),
-                          select=select, dedupe_threshold=float(dedupe_threshold)) for p in per_doc]
+                          select=select, dedupe_threshold=float(dedupe_threshold), source=doc, factcheck=factcheck)
+            for p, doc in zip(per_doc, docs)]
 
 
 def run_hierarchical_seq2seq(df, model_path: str, sys_cfg: dict[str, Any], cfg: dict[str, Any]) -> list[str]:
@@ -330,6 +332,7 @@ def run_hierarchical_seq2seq(df, model_path: str, sys_cfg: dict[str, Any], cfg: 
                 chunk_max_new_tokens=int(h["chunk_max_new_tokens"]),
                 final_max_tokens=int(h.get("final_max_tokens", cfg["generation"]["max_new_tokens"])),
                 select=extract, splitter=splitter, dedupe_threshold=float(h.get("dedupe_threshold", 0.6)),
+                factcheck=h.get("factcheck", "off"),
             )
             short_idx = [k for k, v in enumerate(is_long) if not v]
             preds = [""] * len(inputs)

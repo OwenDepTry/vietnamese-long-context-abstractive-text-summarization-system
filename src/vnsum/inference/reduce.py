@@ -135,6 +135,13 @@ def dedupe_sentences(sentences: Sequence[str], threshold: float = 0.6, n: int = 
     return kept
 
 
+def factcheck_mode(value) -> str:
+    """Chuẩn hóa tùy chọn factcheck: YAML đọc ``off`` không ngoặc thành False."""
+    if value is None or value is False:
+        return "off"
+    return str(value).strip().lower()
+
+
 def reduce_concat(
     parts: Sequence[str],
     *,
@@ -143,13 +150,25 @@ def reduce_concat(
     max_tokens: int,
     select: Callable[[str, int], str],
     dedupe_threshold: float = 0.6,
+    source: str | None = None,
+    factcheck: str = "off",
 ) -> str:
     """Ghép ``parts`` (bản tóm tắt từng chunk, theo thứ tự) -> bản tóm tắt cuối ≤ ``max_tokens`` token.
 
     ``select(text, max_tokens)`` chọn câu khi bản ghép (đã bỏ câu trùng) vẫn quá dài — extractive
     filter, giữ thứ tự gốc. Câu cùng chủ đề với nhiều chunk khác có điểm centrality cao hơn.
+
+    ``factcheck="drop"`` (cần ``source``): bỏ câu có số / ngày / tên riêng không có trong văn bản gốc
+    (``vnsum.factcheck``) TRƯỚC khi bỏ trùng và chọn câu; nếu bỏ hết thì giữ nguyên.
     """
+    factcheck = factcheck_mode(factcheck)
+    if factcheck not in ("off", "drop"):
+        raise ValueError(f"factcheck phải là off | drop, nhận {factcheck!r}")
     sentences = [s for p in parts if p and p.strip() for s in splitter(p.strip())]
+    if factcheck == "drop" and source:
+        from vnsum.factcheck import drop_unsupported
+
+        sentences = drop_unsupported(sentences, source)
     unique = dedupe_sentences(sentences, threshold=dedupe_threshold)
     text = " ".join(unique)
     if count_tokens(text) <= int(max_tokens):

@@ -30,7 +30,7 @@ from vnsum.eval.config import load_eval_config  # noqa: E402
 from vnsum.eval.dataset import load_eval_set  # noqa: E402
 from vnsum.eval.judge import JudgeCache, judge_sample_ids, run_judge  # noqa: E402
 from vnsum.eval.llm_client import ApiGate  # noqa: E402
-from vnsum.eval.metrics import aux_per_sample, rouge_per_sample  # noqa: E402
+from vnsum.eval.metrics import aux_per_sample, rouge_per_sample, unsupported_in  # noqa: E402
 from vnsum.eval.report import aggregate, write_qualitative, write_report  # noqa: E402
 from vnsum.eval.stats import compute_significance  # noqa: E402
 from vnsum.eval.run_info import write_run_info  # noqa: E402
@@ -153,15 +153,19 @@ def main(argv=None) -> int:
         part.insert(0, "system", name)
         part["prediction"] = part["id"].map(preds).fillna("")
         rouge = pd.DataFrame(rouge_per_sample(part["prediction"].tolist(), part["summary"].tolist()), index=part.index)
+        factcheck = bool(aux_cfg.get("factcheck", False))
         aux = pd.DataFrame(
-            [aux_per_sample(p, d, int(aux_cfg["repetition_ngram"]), aux_cfg["novel_ngrams"])
+            [aux_per_sample(p, d, int(aux_cfg["repetition_ngram"]), aux_cfg["novel_ngrams"], factcheck=factcheck)
              for p, d in zip(part["prediction"], part["document"])],
             index=part.index,
         )
+        if factcheck:   # liệt kê số / tên không có căn cứ, để đọc lại trong per_sample.csv
+            aux["unsupported_items"] = ["; ".join(unsupported_in(p, d)) for p, d in zip(part["prediction"], part["document"])]
         frames.append(pd.concat([part, rouge, aux], axis=1))
     per_sample = pd.concat(frames, ignore_index=True)
     ref_aux = pd.DataFrame(
-        [aux_per_sample(s, d, int(aux_cfg["repetition_ngram"]), aux_cfg["novel_ngrams"])
+        [aux_per_sample(s, d, int(aux_cfg["repetition_ngram"]), aux_cfg["novel_ngrams"],
+                        factcheck=bool(aux_cfg.get("factcheck", False)))
          for s, d in zip(eval_df["summary"], eval_df["document"])]
     ).mean().to_dict()
 

@@ -20,7 +20,10 @@ METRIC_COLUMNS = [
 
 
 def _aux_columns(df: pd.DataFrame) -> list[str]:
-    return [c for c in df.columns if c.startswith("repetition_") or c.startswith("novel_")]
+    return [c for c in df.columns if c.startswith(("repetition_", "novel_")) or c == "unsupported_pct"]
+
+
+_AUX_LABELS = {"unsupported_pct": "số/tên không căn cứ (%)"}
 
 
 def _subsets(df: pd.DataFrame) -> list[tuple[str, pd.Series]]:
@@ -173,7 +176,7 @@ def write_report(
         lines += ["", f"## {title}", "", _table(hdr, body)]
 
     # Chỉ số phụ
-    hdr = ["", "Độ dài TB (âm tiết)"] + [c.replace("_", " ") + " (%)" for c in aux]
+    hdr = ["", "Độ dài TB (âm tiết)"] + [_AUX_LABELS.get(c, c.replace("_", " ") + " (%)") for c in aux]
     body = []
     for system, r in allm.iterrows():
         body.append([_label(cfg, system), _fmt(r["length_syllables"], 1)] + [_fmt(r[c]) for c in aux])
@@ -181,7 +184,10 @@ def write_report(
         body.append(["*reference (tham chiếu)*", _fmt(reference_aux.get("length_syllables"), 1)]
                     + [_fmt(reference_aux.get(c)) for c in aux])
     lines += ["", "## Chỉ số phụ (toàn bộ tập đánh giá)", "",
-              "Lặp = tỷ lệ n-gram trong summary là bản lặp của n-gram đứng trước. Novel = tỷ lệ n-gram của summary không có trong document gốc.",
+              "Lặp = tỷ lệ n-gram trong summary là bản lặp của n-gram đứng trước. Novel = tỷ lệ n-gram của summary không có trong document gốc."
+              + (" Số/tên không căn cứ = % bản tóm tắt có số, ngày hoặc tên riêng không tìm thấy trong văn bản gốc "
+                 "(`vnsum.factcheck`; chỉ bắt lỗi bề mặt, không bắt lỗi quan hệ như gán nhầm lời nói)."
+                 if "unsupported_pct" in aux else ""),
               "", _table(hdr, body)]
 
     # Phân bố điểm faithfulness
