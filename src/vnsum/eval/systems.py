@@ -46,9 +46,14 @@ class PredictionCache:
     bật cho hệ thống gọi API trả phí; số dòng như vậy được ghi vào ``legacy_used`` để cảnh báo.
     """
 
-    def __init__(self, directory: str | Path, system: str, fp: str, *, accept_legacy: bool = False) -> None:
+    def __init__(self, directory: str | Path, system: str, fp: str, *, accept_legacy: bool = False,
+                 equivalent_fps: Sequence[str] = ()) -> None:
+        """``equivalent_fps``: fingerprint cũ đã được xác minh là cùng cấu hình (vd. trước khi fingerprint gồm nội
+        dung data_config, khi data_config hiện tại trùng nội dung lúc đó): dòng của chúng được dùng như dòng ``fp``."""
         self.path = Path(directory) / f"{system}.jsonl"
         self.fp = fp
+        accepted = {fp, *equivalent_fps}
+        self.equivalent_rows = 0
         self.accept_legacy = accept_legacy
         self._lock = threading.Lock()
         self.data: dict[str, str] = {}
@@ -59,9 +64,10 @@ class PredictionCache:
                     if not line.strip():
                         continue
                     row = json.loads(line)
-                    if row.get("fp") == fp:
+                    if row.get("fp") in accepted:
                         self.data[str(row["id"])] = row["prediction"]
                         self._in[str(row["id"])] = row.get("in")
+                        self.equivalent_rows += row.get("fp") != fp
         self.legacy_used = 0
 
     def _valid(self, i: str, h: str | None) -> bool:
@@ -427,6 +433,12 @@ def generate_llm(
 # Tăng khi đổi code sinh / reduce / tiền xử lý của hệ thống seq2seq mà config không đổi
 # (vd. 2: sửa dedupe của reduce concat) -> cache dự đoán cũ không bị dùng lại.
 PIPELINE_VERSION = 5   # 3: dedupe xét tên đầu câu + thứ tự số; 4: fingerprint gồm batch_size; 5: factcheck bỏ qua chữ cái đơn
+# Phiên bản quy tắc vnsum.factcheck; CHỈ vào fingerprint của hệ thống bỏ câu theo factcheck (factcheck: drop), để sửa
+# bộ kiểm tra không bắt sinh lại mọi hệ thống. 2: số thập phân / ngày / hàng nghìn, tên người đầu câu, "48. 000".
+FACTCHECK_VERSION = 3   # 3: chỉ ghép "48. 000" (dấu chấm), ngày 17-11 = 17/11, tắt kiểm tra tên đầu câu
+# Nội dung configs/data.yaml (fingerprint của dict đã đọc) từ commit aafc644 tới nay. Cache hierarchical ghi trước khi
+# fingerprint gồm nội dung data_config vẫn hợp lệ nếu data_config hiện tại trùng nội dung này.
+LEGACY_DATA_CONFIG_FP = "0a06932edcd7cdb3"
 
 _MODEL_HASHES: dict[tuple, str] = {}
 _WEIGHT_SUFFIXES = (".safetensors", ".bin", ".pt")
@@ -465,16 +477,49 @@ def effective_generation(cfg: dict[str, Any], sys_cfg: dict[str, Any]) -> dict[s
     return {**cfg["generation"], **(sys_cfg.get("generation") or {})}
 
 
+def _uses_factcheck_drop(sys_cfg: dict[str, Any]) -> bool:
+    from vnsum.inference.reduce import factcheck_mode
+
+    if sys_cfg["type"] == "seq2seq" and sys_cfg.get("long_strategy") == "hierarchical":
+        return factcheck_mode((sys_cfg.get("hierarchical") or {}).get("factcheck", "off")) == "drop"
+    if sys_cfg["type"] == "pipeline":
+        return factcheck_mode(_inference_config(sys_cfg)["long_document"].get("factcheck", "off")) == "drop"
+    return False
+
+
+def system_fingerprints(name: str, sys_cfg: dict[str, Any], cfg: dict[str, Any],
+                        model_path: str | None) -> tuple[str, list[str]]:
+    """(fingerprint, các fingerprint cũ tương đương). Tương đương: hệ thống hierarchical trước khi fingerprint gồm
+    nội dung data_config, nếu data_config hiện tại có đúng nội dung lúc đó (LEGACY_DATA_CONFIG_FP)."""
+    fp = system_fingerprint(name, sys_cfg, cfg, model_path)
+    if sys_cfg["type"] == "seq2seq" and sys_cfg.get("long_strategy") == "hierarchical":
+        payload = _fingerprint_payload(name, sys_cfg, cfg, model_path)
+        if fingerprint(payload.pop("data")) == LEGACY_DATA_CONFIG_FP:
+            return fp, [fingerprint(payload)]
+    return fp, []
+
+
 def system_fingerprint(name: str, sys_cfg: dict[str, Any], cfg: dict[str, Any], model_path: str | None) -> str:
+    return fingerprint(_fingerprint_payload(name, sys_cfg, cfg, model_path))
+
+
+def _fingerprint_payload(name: str, sys_cfg: dict[str, Any], cfg: dict[str, Any], model_path: str | None) -> dict:
     # display_name/description chỉ ảnh hưởng report -> không làm mất cache dự đoán khi đổi tên.
     shown = {k: v for k, v in sys_cfg.items() if k not in ("display_name", "description")}
     payload: dict[str, Any] = {"name": name, "system": shown, "model_path": model_path}
+    if _uses_factcheck_drop(sys_cfg):
+        payload["factcheck_version"] = FACTCHECK_VERSION
     if sys_cfg["type"] == "seq2seq":
         payload["model_path"] = model_identity(model_path)
         payload["pipeline_version"] = PIPELINE_VERSION
         # Cấu hình sinh THỰC TẾ (chung + override của hệ thống), GỒM batch_size: đối chứng trên 225 văn bản dài cho
         # thấy đổi batch làm đổi output ở ~26% văn bản, nên batch khác nhau không được dùng chung cache.
         payload["generation"] = effective_generation(cfg, sys_cfg)
+        if sys_cfg.get("long_strategy") == "hierarchical":
+            from vnsum.config import load_config
+
+            # NỘI DUNG config dữ liệu (tách câu, lọc câu) chứ không chỉ đường dẫn: sửa file mà giữ tên phải sinh lại.
+            payload["data"] = load_config((sys_cfg.get("hierarchical") or {}).get("data_config", "configs/data.yaml"))
     if sys_cfg["type"] == "pipeline":
         from vnsum.config import load_config
 
@@ -488,7 +533,7 @@ def system_fingerprint(name: str, sys_cfg: dict[str, Any], cfg: dict[str, Any], 
         client = dict(cfg["llm"][sys_cfg["client"]])
         client.pop("concurrency", None)
         payload["llm"] = client
-    return fingerprint(payload)
+    return payload
 
 
 def sample_input_hashes(df, sys_cfg: dict[str, Any]) -> list[str]:
@@ -517,8 +562,11 @@ def run_system(
     """Trả ``{id: prediction}`` cho mọi mẫu của ``df``; ``None`` nếu hệ thống bị bỏ qua (thiếu --allow_api)."""
     ids = [str(i) for i in df["id"]]
     is_llm = sys_cfg["type"] == "llm"
-    cache = PredictionCache(results_dir / "predictions", name, system_fingerprint(name, sys_cfg, cfg, model_path),
-                            accept_legacy=is_llm)
+    fp, equivalent = system_fingerprints(name, sys_cfg, cfg, model_path)
+    cache = PredictionCache(results_dir / "predictions", name, fp, accept_legacy=is_llm, equivalent_fps=equivalent)
+    if cache.equivalent_rows:
+        logger.info("%s: %d dự đoán từ cache trước khi fingerprint gồm nội dung data_config (data_config không đổi).",
+                    name, cache.equivalent_rows)
     hashes = dict(zip(ids, sample_input_hashes(df, sys_cfg)))
     missing = set(cache.missing(ids, [hashes[i] for i in ids]))
     if cache.legacy_used:

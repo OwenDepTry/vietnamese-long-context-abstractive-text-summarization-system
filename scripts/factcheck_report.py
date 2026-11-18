@@ -39,6 +39,10 @@ def build_report(per_sample, documents, human=None, results_dir="") -> str:
     df = df[df["document"] != ""]
     df["items"] = [unsupported_in(str(p) if pd.notna(p) else "", d) for p, d in zip(df["prediction"], df["document"])]
     df["flag"] = df["items"].map(bool)
+    # Cùng bộ kiểm tra nhưng KIỂM TRA CẢ tên người đầu câu (tùy chọn, mặc định tắt): đo trên dữ liệu độc lập
+    # trước khi bật. Lần đo đầu (sau review lần 4): +18 bản bị đánh dấu nhưng chỉ ~28% trong số đó judge chấm ≤ 2.
+    df["flag_init"] = [bool(unsupported_in(str(p) if pd.notna(p) else "", d, check_initial=True))
+                       for p, d in zip(df["prediction"], df["document"])]
     ref = df.drop_duplicates("id")
     ref_flag = 100 * pd.Series([bool(unsupported_in(str(s), d)) for s, d in zip(ref["summary"], ref["document"])]).mean()
 
@@ -65,6 +69,14 @@ def build_report(per_sample, documents, human=None, results_dir="") -> str:
         precision = 100 * (j.loc[j["flag"], "faithfulness"] <= 2).mean() if j["flag"].any() else float("nan")
         lines += ["", f"Trong các bản judge chấm ≤ 2, bị đánh dấu: **{_p(recall)}%** (độ phủ). Trong các bản bị đánh dấu, "
                   f"judge chấm ≤ 2: **{_p(precision)}%** (độ chính xác). Judge có thể sai; đây là đối chiếu, không phải sự thật."]
+        lines += ["", "### Quy tắc tên người đầu câu (tùy chọn, mặc định tắt)", "",
+                  "| Chế độ | Bị đánh dấu | Độ phủ (%) | Độ chính xác (%) |", "|---|---:|---:|---:|"]
+        for col, label in (("flag", "Bỏ qua từ đầu câu (mặc định)"), ("flag_init", "Kiểm tra tên người đầu câu")):
+            f = j[col]
+            rec = 100 * j.loc[low, col].mean() if low.any() else float("nan")
+            prec = 100 * (j.loc[f, "faithfulness"] <= 2).mean() if f.any() else float("nan")
+            lines.append(f"| {label} | {int(f.sum()):,} | {_p(rec)} | {_p(prec)} |")
+        lines += ["", "Chỉ nên bật `check_initial=True` khi độ chính xác của nó không thấp hơn rõ chế độ mặc định."]
 
     if human is not None and len(human):
         h = human.copy()

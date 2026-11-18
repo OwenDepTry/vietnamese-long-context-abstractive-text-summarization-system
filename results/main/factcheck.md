@@ -7,9 +7,9 @@ Sinh bởi `scripts/factcheck_report.py` từ dự đoán đã có. Một bản 
 | Hệ thống | n | Bị đánh dấu (%) |
 |---|---:|---:|
 | `lead3` | 1,910 | 0.0 |
-| `vit5_lora` | 1,910 | 4.9 |
-| `vit5_public` | 1,910 | 12.5 |
-| `llm_zeroshot` | 1,910 | 4.5 |
+| `vit5_lora` | 1,910 | 4.4 |
+| `vit5_public` | 1,910 | 12.6 |
+| `llm_zeroshot` | 1,910 | 4.6 |
 | *reference* | 1,910 | 25.4 |
 
 Reference cũng có thể bị đánh dấu: bản tóm tắt gốc của bài báo đôi khi nêu số / tên không có trong thân bài, nên con số này là mức nền chứ không phải 0.
@@ -18,12 +18,21 @@ Reference cũng có thể bị đánh dấu: bản tóm tắt gốc của bài b
 
 | | n | Faithfulness TB | Judge ≤ 2 (%) |
 |---|---:|---:|---:|
-| Bị đánh dấu | 50 | 2.66 | 58.0 |
-| Không bị đánh dấu | 750 | 4.28 | 14.3 |
+| Bị đánh dấu | 51 | 2.73 | 54.9 |
+| Không bị đánh dấu | 749 | 4.28 | 14.4 |
 
-Trong các bản judge chấm ≤ 2, bị đánh dấu: **21.3%** (độ phủ). Trong các bản bị đánh dấu, judge chấm ≤ 2: **58.0%** (độ chính xác). Judge có thể sai; đây là đối chiếu, không phải sự thật.
+Trong các bản judge chấm ≤ 2, bị đánh dấu: **20.6%** (độ phủ). Trong các bản bị đánh dấu, judge chấm ≤ 2: **54.9%** (độ chính xác). Judge có thể sai; đây là đối chiếu, không phải sự thật.
 
-## Đối chiếu với người chấm (tham khảo — đã dùng để chỉnh quy tắc)
+### Quy tắc tên người đầu câu (tùy chọn, mặc định tắt)
+
+| Chế độ | Bị đánh dấu | Độ phủ (%) | Độ chính xác (%) |
+|---|---:|---:|---:|
+| Bỏ qua từ đầu câu (mặc định) | 51 | 20.6 | 54.9 |
+| Kiểm tra tên người đầu câu | 69 | 24.3 | 47.8 |
+
+Chỉ nên bật `check_initial=True` khi độ chính xác của nó không thấp hơn rõ chế độ mặc định.
+
+## Đối chiếu với người chấm (độc lập — không dùng để chỉnh quy tắc)
 
 | | n | Trung thực TB (người) |
 |---|---:|---:|

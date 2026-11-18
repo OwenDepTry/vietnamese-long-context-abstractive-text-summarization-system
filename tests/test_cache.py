@@ -136,3 +136,27 @@ def test_cache_key_includes_batch_size(tmp_path, monkeypatch):
     assert run_system("s", sys_cfg, df, {"generation": {**gen, "batch_size": 4}}, **kw) == {"a": "batch 4"}
     assert run_system("s", sys_cfg, df, {"generation": {**gen, "batch_size": 8}}, **kw) == {"a": "batch 8"}
     assert calls == [8, 4]                                      # batch 8 lần hai lấy từ cache, đúng output của nó
+
+
+def test_hierarchical_fingerprint_follows_data_config_content(tmp_path):
+    """Review lần 4: sửa NỘI DUNG data_config mà giữ đường dẫn phải làm đổi fingerprint."""
+    from vnsum.eval.systems import system_fingerprints
+
+    root = Path(__file__).resolve().parents[1]
+    data = tmp_path / "data.yaml"
+    data.write_text((root / "configs" / "data.yaml").read_text(encoding="utf-8"), encoding="utf-8")
+    sys_cfg = {"type": "seq2seq", "input_column": "input_text", "long_strategy": "hierarchical",
+               "hierarchical": {"data_config": str(data)}}
+    cfg = {"generation": {"num_beams": 4}}
+    fp1, eq1 = system_fingerprints("h", sys_cfg, cfg, "m")
+    assert eq1, "data_config chưa đổi: cache cũ (fingerprint không gồm data_config) vẫn dùng được"
+    data.write_text(data.read_text(encoding="utf-8").replace("min_chars: 2", "min_chars: 3"), encoding="utf-8")
+    fp2, eq2 = system_fingerprints("h", sys_cfg, cfg, "m")
+    assert fp2 != fp1 and eq2 == []
+
+
+def test_prediction_cache_accepts_equivalent_fingerprints(tmp_path):
+    PredictionCache(tmp_path, "s", "old").add({"a": "x"}, {"a": "h"})
+    assert PredictionCache(tmp_path, "s", "new").missing(["a"], ["h"]) == ["a"]
+    c = PredictionCache(tmp_path, "s", "new", equivalent_fps=["old"])
+    assert c.missing(["a"], ["h"]) == [] and c.equivalent_rows == 1

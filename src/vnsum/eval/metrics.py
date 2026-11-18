@@ -70,10 +70,11 @@ def aux_per_sample(summary: str, document: str, repetition_n: int, novel_ns: Seq
     return row
 
 
-def unsupported_in(summary: str, document: str) -> list[str]:
+def unsupported_in(summary: str, document: str, *, check_initial: bool = False) -> list[str]:
     from vnsum.data.preprocess import split_sentences
     from vnsum.factcheck import check_summary
 
     if not (summary or "").strip():
         return []
-    return [x for u in check_summary(summary, document, split_sentences).unsupported for x in u]
+    fc = check_summary(summary, document, split_sentences, check_initial=check_initial)
+    return [x for u in fc.unsupported for x in u]

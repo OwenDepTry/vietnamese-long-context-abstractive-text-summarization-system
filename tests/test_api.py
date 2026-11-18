@@ -281,3 +281,86 @@ def test_ui_client_calls_api_and_formats_errors():
 
     dead = httpx.Client(base_url="http://api", transport=httpx.MockTransport(down))
     assert ui.get_health(dead) is None and "Không gọi được API" in ui.summarize(dead, "x", "short")["error"]
+
+
+class BlockingBackend(FakeBackend):
+    """Sinh bị chặn tới khi ``release`` được đặt: mô phỏng model đang chạy khi client ngắt kết nối."""
+
+    def __init__(self):
+        super().__init__()
+        self.started, self.release = threading.Event(), threading.Event()
+
+    def generate(self, texts, gen_kwargs):
+        self.started.set()
+        self.release.wait(timeout=10)
+        return super().generate(texts, gen_kwargs)
+
+
+def test_streaming_backend_refuses_new_generation_after_stop():
+    from vnsum.api.streaming import StreamCancelled
+
+    stop = threading.Event()
+    sb = StreamingBackend(FakeBackend(), lambda e: None, FakeStreamer, stop=stop)
+    stop.set()
+    with pytest.raises(StreamCancelled):
+        sb.generate(["văn bản"], {"max_new_tokens": 8})
+
+
+def test_stop_criteria_follows_event():
+    pytest.importorskip("transformers")
+    from vnsum.api.streaming import stop_criteria
+
+    stop = threading.Event()
+    crit = stop_criteria(stop)[0]
+    assert crit(None, None) is False
+    stop.set()
+    assert crit(None, None) is True
+
+
+def test_stream_disconnect_keeps_slot_until_generation_ends(cfg, data_cfg):
+    """Client đóng stream khi model còn sinh: semaphore KHÔNG được trả sớm (trước đây trả ngay -> request kế tiếp
+    chạy song song dù max_concurrency = 1); trả khi luồng sinh kết thúc."""
+    pytest.importorskip("fastapi")
+    import asyncio
+
+    from vnsum.api.app import create_app
+
+    backend = BlockingBackend()
+    summ = Summarizer(backend, cfg, data_cfg)
+    app = create_app(ApiSettings(), cfg, summarizer_factory=lambda: summ, streamer_factory=FakeStreamer)
+
+    async def scenario():
+        app.state.summarizer = app.state.stream_summarizer = summ
+        sem = app.state.semaphore = asyncio.Semaphore(1)
+        body = json.dumps({"text": "Văn bản thử."}).encode()
+        got_start = asyncio.Event()
+        sent = []
+
+        async def receive():
+            if not sent:
+                sent.append("req")
+                return {"type": "http.request", "body": body, "more_body": False}
+            await got_start.wait()
+            await asyncio.to_thread(backend.started.wait, 5)
+            return {"type": "http.disconnect"}
+
+        async def send(msg):
+            if msg["type"] == "http.response.body" and b"event: start" in msg.get("body", b""):
+                got_start.set()
+
+        scope = {"type": "http", "asgi": {"version": "3.0", "spec_version": "2.3"}, "http_version": "1.1",
+                 "method": "POST", "scheme": "http", "path": "/summarize/stream", "raw_path": b"/summarize/stream",
+                 "query_string": b"", "root_path": "", "headers": [(b"content-type", b"application/json")],
+                 "client": ("test", 1), "server": ("test", 80)}
+        await asyncio.wait_for(app(scope, receive, send), timeout=10)
+        held_after_disconnect = sem.locked()
+        backend.release.set()
+        for _ in range(100):
+            if not sem.locked():
+                break
+            await asyncio.sleep(0.05)
+        return held_after_disconnect, sem.locked()
+
+    held, still_locked = asyncio.run(scenario())
+    assert held, "semaphore bị trả khi luồng sinh vẫn chạy"
+    assert not still_locked, "semaphore không được trả sau khi luồng sinh kết thúc"

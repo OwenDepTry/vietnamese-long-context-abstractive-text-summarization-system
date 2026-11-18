@@ -73,7 +73,10 @@ def main() -> None:
                     st.error(res["error"])
                     continue
                 st.write(res["summary"])
-                if res.get("unsupported"):
+                if res.get("factcheck_failed"):
+                    st.error("Mọi câu của bản tóm tắt đều có số liệu / tên không tìm thấy trong văn bản gốc. "
+                             "Đừng dùng bản này khi chưa đối chiếu lại.")
+                elif res.get("unsupported"):
                     st.warning("Kiểm tra lại với văn bản gốc — không tìm thấy trong bài: "
                                + ", ".join(res["unsupported"]))
                 reused = " · dùng lại tóm tắt chunk" if res.get("chunk_cache_hit") else ""

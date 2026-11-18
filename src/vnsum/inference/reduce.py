@@ -152,6 +152,7 @@ def reduce_concat(
     dedupe_threshold: float = 0.6,
     source: str | None = None,
     factcheck: str = "off",
+    report: dict | None = None,
 ) -> str:
     """Ghép ``parts`` (bản tóm tắt từng chunk, theo thứ tự) -> bản tóm tắt cuối ≤ ``max_tokens`` token.
 
@@ -159,7 +160,8 @@ def reduce_concat(
     filter, giữ thứ tự gốc. Câu cùng chủ đề với nhiều chunk khác có điểm centrality cao hơn.
 
     ``factcheck="drop"`` (cần ``source``): bỏ câu có số / ngày / tên riêng không có trong văn bản gốc
-    (``vnsum.factcheck``) TRƯỚC khi bỏ trùng và chọn câu; nếu bỏ hết thì giữ nguyên.
+    (``vnsum.factcheck``) TRƯỚC khi bỏ trùng và chọn câu. Nếu mọi câu đều bị đánh dấu thì giữ nguyên (không trả
+    rỗng) và ghi ``report["factcheck_failed"] = True`` để nơi gọi báo rõ bản tóm tắt không qua kiểm tra.
     """
     factcheck = factcheck_mode(factcheck)
     if factcheck not in ("off", "drop"):
@@ -168,7 +170,11 @@ def reduce_concat(
     if factcheck == "drop" and source:
         from vnsum.factcheck import drop_unsupported
 
-        sentences = drop_unsupported(sentences, source)
+        dropped = drop_unsupported(sentences, source)
+        sentences = dropped.sentences
+        if report is not None:
+            report["factcheck_dropped"] = dropped.dropped
+            report["factcheck_failed"] = dropped.all_flagged
     unique = dedupe_sentences(sentences, threshold=dedupe_threshold)
     text = " ".join(unique)
     if count_tokens(text) <= int(max_tokens):

@@ -18,6 +18,24 @@ from typing import Any, Callable, Sequence
 Emit = Callable[[dict[str, Any] | None], None]
 
 
+class StreamCancelled(RuntimeError):
+    """Client đã đóng kết nối: dừng các lần sinh còn lại."""
+
+
+def stop_criteria(stop: threading.Event):
+    """``StoppingCriteriaList`` dừng ``generate`` khi ``stop`` được đặt; None nếu không có transformers."""
+    try:
+        from transformers import StoppingCriteria, StoppingCriteriaList
+    except ImportError:  # pragma: no cover - API luôn có transformers
+        return None
+
+    class _Stop(StoppingCriteria):
+        def __call__(self, input_ids, scores, **kwargs):  # noqa: ANN001
+            return stop.is_set()
+
+    return StoppingCriteriaList([_Stop()])
+
+
 def default_streamer_factory(tokenizer: Any):
     from transformers import TextIteratorStreamer
 
@@ -34,9 +52,11 @@ class StreamingBackend:
 
     max_batch_size = 1   # Summarizer đọc giá trị này: tóm tắt chunk từng cái một để stream theo từng lần sinh
 
-    def __init__(self, base: Any, emit: Emit, streamer_factory: Callable[[Any], Any] | None = None) -> None:
+    def __init__(self, base: Any, emit: Emit, streamer_factory: Callable[[Any], Any] | None = None,
+                 stop: threading.Event | None = None) -> None:
         self.base = base
         self.emit = emit
+        self.stop = stop or threading.Event()
         self.streamer_factory = streamer_factory or default_streamer_factory
         self.name, self.device, self.dtype = base.name, base.device, base.dtype
         self.tokenizer = base.tokenizer
@@ -45,12 +65,17 @@ class StreamingBackend:
     def generate(self, texts: Sequence[str], gen_kwargs: dict[str, Any]):
         if len(texts) != 1:
             raise ValueError("Streaming chỉ hỗ trợ batch 1")
+        if self.stop.is_set():   # văn bản dài: không sinh các chunk còn lại khi client đã đi
+            raise StreamCancelled("client đã đóng kết nối")
         call = self.calls
         self.calls += 1
         streamer = self.streamer_factory(self.tokenizer)
         # early_stopping / length_penalty chỉ có nghĩa với beam search
         kwargs = {k: v for k, v in gen_kwargs.items() if k not in ("early_stopping", "length_penalty")}
         kwargs.update(num_beams=1, streamer=streamer)   # streamer của transformers không hỗ trợ beam search
+        criteria = stop_criteria(self.stop)
+        if criteria is not None:
+            kwargs["stopping_criteria"] = criteria     # dừng giữa chừng khi client đóng kết nối
         result: dict[str, Any] = {}
 
         def run() -> None:

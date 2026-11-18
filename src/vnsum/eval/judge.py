@@ -125,8 +125,19 @@ def judge_sample_ids(ids: Sequence[str], n: int, seed: int) -> list[str]:
     return sorted(pool[: min(int(n), len(pool))])
 
 
-def cache_key(judge_model: str, prompt_version: str, system: str, sample_id: str, prediction: str) -> str:
-    raw = json.dumps([judge_model, prompt_version, system, sample_id, prediction], ensure_ascii=False)
+def prompt_hash(prompt: str, system_prompt: str = SYSTEM_PROMPT) -> str:
+    """Hash của ĐÚNG nội dung gửi cho judge: system prompt + rubric + văn bản gốc (sau khi cắt) + bản tóm tắt."""
+    return hashlib.sha1(json.dumps([system_prompt, prompt], ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+def cache_key(judge_model: str, prompt_version: str, system: str, sample_id: str, prediction: str,
+              prompt_sha: str | None = None) -> str:
+    """Khóa cache. Có ``prompt_sha`` (mặc định từ nay): đổi văn bản gốc, rubric hay ``max_document_chars`` thì
+    chấm lại dù id và bản tóm tắt giữ nguyên. Không có ``prompt_sha``: khóa cũ (chỉ id + bản tóm tắt)."""
+    parts = [judge_model, prompt_version, system, sample_id, prediction]
+    if prompt_sha is not None:
+        parts.append(prompt_sha)
+    raw = json.dumps(parts, ensure_ascii=False)
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()
 
 
@@ -169,9 +180,26 @@ def run_judge(
     retry_errors=True: chấm lại cả các mục trong cache bị lỗi parse (dòng mới ghi đè dòng cũ khi nạp cache)."""
     jcfg, client_cfg = cfg["judge"], cfg["llm"]["judge"]
     version = str(jcfg["prompt_version"])
-    keyed = [(cache_key(client_cfg["model"], version, system, it["id"], it["prediction"]), it) for it in items]
+    max_chars = int(jcfg["max_document_chars"])
+    accept_legacy = bool(jcfg.get("accept_legacy_cache", True))
+    keyed = []
+    legacy_used = 0
+    for it in items:
+        prompt, _ = build_judge_prompt(it["document"], it["prediction"], max_chars)
+        key = cache_key(client_cfg["model"], version, system, it["id"], it["prediction"], prompt_hash(prompt))
+        if cache.get(key) is None and accept_legacy:
+            # Dòng ghi trước khi khóa có hash prompt: không kiểm tra được văn bản gốc có đổi hay không. Dùng lại
+            # (chấm lại tốn phí API) nhưng đếm để cảnh báo, và ghi thêm dòng theo khóa mới.
+            old = cache.get(cache_key(client_cfg["model"], version, system, it["id"], it["prediction"]))
+            if old is not None:
+                cache.add({**old, "key": key, "migrated_from_legacy_key": old["key"]})
+                legacy_used += 1
+        keyed.append((key, it))
+    if legacy_used:
+        logger.warning("judge:%s: dùng lại %d điểm từ cache cũ (khóa chưa gồm văn bản gốc). Nếu dữ liệu test đã đổi, "
+                       "đặt judge.accept_legacy_cache: false hoặc xóa %s để chấm lại.", system, legacy_used, cache.path)
+
     def _needs(k: str) -> bool:
-        row = cache.get(k)
         row = resolve_cached(cache.get(k))
         return row is None or (retry_errors and row.get("error") is not None)
 
@@ -188,7 +216,7 @@ def run_judge(
 
         def _one(pair):
             key, it = pair
-            prompt, truncated = build_judge_prompt(it["document"], it["prediction"], int(jcfg["max_document_chars"]))
+            prompt, truncated = build_judge_prompt(it["document"], it["prediction"], max_chars)
             raw, _ = client.complete(prompt, system=SYSTEM_PROMPT)
             row = {"key": key, "system": system, "id": it["id"], "judge_model": client_cfg["model"],
                    "prompt_version": version, "document_truncated": truncated, "raw": raw}

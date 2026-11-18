@@ -176,3 +176,19 @@ def test_repo_config_is_valid():
     cfg = load_config(Path(__file__).resolve().parents[1] / "configs" / "data.yaml")
     assert cfg["preprocess"]["word_segmentation"]["enabled"] is False  # không tách từ mặc định cho ViT5
     assert cfg["tokenizer"]["name_or_path"] == "VietAI/vit5-base"
+
+
+def test_smoke_run_never_writes_into_full_processed_dir():
+    """``make smoke`` sau ``make prepare`` từng thay train 116k dòng bằng vài chục dòng: --limit phải ghi chỗ khác."""
+    import importlib.util
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location("prepare_data", root / "scripts" / "prepare_data.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    cfg = {"paths": {"processed_dir": "data/processed", "stats_file": "data/processed/stats.json"}}
+    assert mod.output_paths(cfg, None, None) == (Path("data/processed"), Path("data/processed/stats.json"))
+    out, stats = mod.output_paths(cfg, 200, None)
+    assert out == Path("data/processed_smoke") and stats == Path("data/processed_smoke/stats.json")
+    assert mod.output_paths(cfg, 200, "tmp/x") == (Path("tmp/x"), Path("tmp/x/stats.json"))

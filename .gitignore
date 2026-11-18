@@ -11,6 +11,7 @@ dist/
 # Dữ liệu và artefact (không commit)
 data/raw/
 data/processed/*
+data/processed_smoke/
 !data/processed/.gitkeep
 outputs/
 checkpoints/

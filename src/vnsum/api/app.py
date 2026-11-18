@@ -13,6 +13,7 @@
 import asyncio
 import contextvars
 import logging
+import threading
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -24,7 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, create_mod
 from starlette.concurrency import run_in_threadpool
 
 from vnsum.api.settings import ApiSettings, api_config
-from vnsum.api.streaming import StreamingBackend, sse_event
+from vnsum.api.streaming import StreamCancelled, StreamingBackend, sse_event
 from vnsum.inference.config import length_preset, load_inference_config
 
 logger = logging.getLogger("vnsum.api")
@@ -79,6 +80,8 @@ class SummarizeResponse(BaseModel):
     chunk_cache_hit: bool = Field(default=False, description="dùng lại bản tóm tắt chunk của lần gọi trước (cùng văn bản)")
     unsupported: list[str] = Field(default_factory=list,
                                    description="số / ngày / tên riêng trong bản tóm tắt không có trong văn bản gốc — nên kiểm tra lại")
+    factcheck_failed: bool = Field(default=False,
+                                   description="mọi câu đều có số / tên không có trong bài; bản tóm tắt chưa qua kiểm tra")
     backend: BackendInfo
 
 
@@ -177,6 +180,7 @@ def create_app(settings: ApiSettings | None = None, cfg: dict[str, Any] | None =
             request_id=rid, summary=r.summary, length=r.length, strategy=r.strategy, latency_ms=round(latency, 1),
             input_tokens=r.input_tokens, model_input_tokens=r.model_input_tokens, new_tokens=r.new_tokens,
             generate_calls=r.generate_calls, chunk_cache_hit=r.chunk_cache_hit, unsupported=r.unsupported,
+            factcheck_failed=r.factcheck_failed,
             backend=_backend_info(summ.backend),
         )
 
@@ -198,7 +202,9 @@ def create_app(settings: ApiSettings | None = None, cfg: dict[str, Any] | None =
         def emit(event: dict[str, Any] | None) -> None:
             loop.call_soon_threadsafe(queue.put_nowait, event)
 
-        streaming = Summarizer(StreamingBackend(base.backend, emit, streamer_factory), base.cfg, base.data_cfg)
+        stop = threading.Event()
+        streaming = Summarizer(StreamingBackend(base.backend, emit, streamer_factory, stop=stop), base.cfg,
+                               base.data_cfg)
 
         def work() -> None:
             request_id_var.set(rid)
@@ -210,8 +216,11 @@ def create_app(settings: ApiSettings | None = None, cfg: dict[str, Any] | None =
                             r.new_tokens, latency)
                 emit({"type": "done", "request_id": rid, "summary": r.summary, "length": r.length,
                       "strategy": r.strategy, "latency_ms": round(latency, 1), "new_tokens": r.new_tokens,
-                      "generate_calls": r.generate_calls, "unsupported": r.unsupported, "decoding": "greedy",
+                      "generate_calls": r.generate_calls, "unsupported": r.unsupported,
+                      "factcheck_failed": r.factcheck_failed, "decoding": "greedy",
                       "backend": _backend_info(base.backend).model_dump()})
+            except StreamCancelled:
+                logger.info("stream dừng: client đã đóng kết nối")
             except Exception as err:
                 logger.exception("stream lỗi")
                 emit({"type": "error", "request_id": rid, "detail": f"{type(err).__name__}: {err}"})
@@ -219,8 +228,16 @@ def create_app(settings: ApiSettings | None = None, cfg: dict[str, Any] | None =
                 emit(None)
 
         async def events():
-            async with semaphore:
+            # Quyền chạy (semaphore) được trả khi LUỒNG SINH kết thúc, không phải khi generator này đóng: client
+            # ngắt kết nối giữa chừng thì luồng sinh vẫn còn chạy, trả sớm sẽ làm vượt max_concurrency.
+            await semaphore.acquire()
+            try:
                 task = asyncio.ensure_future(run_in_threadpool(work))
+            except BaseException:
+                semaphore.release()
+                raise
+            task.add_done_callback(lambda _t: semaphore.release())
+            try:
                 yield sse_event("start", {"request_id": rid, "length": req.length,
                                           "backend": _backend_info(base.backend).model_dump()})
                 while True:
@@ -230,6 +247,9 @@ def create_app(settings: ApiSettings | None = None, cfg: dict[str, Any] | None =
                     kind = event.pop("type")
                     yield sse_event(kind, event)
                 await task
+            finally:
+                if not task.done():
+                    stop.set()   # client đã đi: dừng sinh sớm; semaphore được trả khi luồng sinh thực sự dừng
 
         return StreamingResponse(events(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

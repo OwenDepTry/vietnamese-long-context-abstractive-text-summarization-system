@@ -145,3 +145,50 @@ def test_factcheck_report_script(tmp_path, monkeypatch):
     assert "| `s1` | 2 | 50.0 |" in text and "| `s2` | 2 | 50.0 |" in text
     assert "| Bị đánh dấu | 2 | 1.50 | 100.0 |" in text            # judge: 2 bản bị đánh dấu đều ≤ 2
     assert "7/3/2015" in text and "Nguyễn Văn Phượng" in text and "người chấm (độc lập" in text
+
+
+# ----------------------------------------------------------------------------- các lỗi từ review (commit 0386497)
+@pytest.mark.parametrize("source, summary, expected", [
+    ("Doanh thu đạt 3,5 tỷ đồng.", "Doanh thu đạt 5 tỷ đồng.", ["5"]),          # "5" không có trong "3,5"
+    ("Giá vé 1.500 đồng.", "Giá vé 500 đồng.", ["500"]),                         # "500" không có trong "1.500"
+    ("Doanh thu đạt 3,5 tỷ đồng.", "Doanh thu đạt 3.5 tỷ đồng.", []),            # cùng số thập phân
+    ("Đăng ký ngày 7/1/2015.", "Đăng ký năm 2015.", []),                        # năm của ngày đầy đủ
+    ("Đăng ký ngày 7/1/2015.", "Đăng ký ngày 7/1.", []),                        # ngày/tháng của ngày đầy đủ
+    ("Đăng ký ngày 7/1/2015.", "Đăng ký ngày 1/2015.", ["1/2015"]),             # không phải ngày trong bài
+    ("Nhiệm kỳ 2018-2023.", "Nhiệm kỳ bắt đầu năm 2018.", []),                  # đầu khoảng
+    ("Lưu lượng 45.000-48.000 xe.", "Lưu lượng 45.000-48. 000 xe.", []),        # lỗi giải mã "48. 000"
+    ("Nam đã nhận học bổng.", "Nam đã nhận học bổng.", []),
+    ("Số ca 130, 122, 105 người.", "Số ca 130, 122, 105 người.", []),          # danh sách số, không ghép
+    ("Khai mạc ngày 17/11/2018.", "Khai mạc sáng 17-11.", []),                  # 17-11 = 17/11
+])
+def test_review_cases(source, summary, expected):
+    from vnsum.data.preprocess import split_sentences
+
+    assert [x for u in check_summary(summary, source, split_sentences).unsupported for x in u] == expected
+
+
+def test_initial_word_check_only_for_common_names():
+    src = SourceIndex("Hãy dành thời gian để hiểu rõ vấn đề trước khi quyết định.")
+    for sent in ("Nhận diện dấu hiệu sớm.", "Cân nhắc kỹ trước khi mua.", "Trao đổi với người thân."):
+        assert unsupported_items(sent, src, check_initial=True) == []                     # động từ đầu câu (WikiLingua), không phải tên
+    src2 = SourceIndex("Nam đã nhận học bổng.")
+    assert unsupported_items("Lan đã nhận học bổng.", src2) == []                      # mặc định: tắt (xem README)
+    assert unsupported_items("Lan đã nhận học bổng.", src2, check_initial=True) == ["Lan"]
+
+
+def test_drop_reports_when_every_sentence_is_flagged():
+    res = drop_unsupported(["Doanh thu đạt 999 tỷ đồng."], "Doanh thu đạt 100 tỷ đồng.")
+    assert res.all_flagged and res.sentences == ["Doanh thu đạt 999 tỷ đồng."]
+    ok = drop_unsupported(["Doanh thu đạt 100 tỷ.", "Lãi 999 tỷ."], "Doanh thu đạt 100 tỷ đồng.")
+    assert not ok.all_flagged and ok.dropped == 1 and ok == ["Doanh thu đạt 100 tỷ."]
+    report: dict = {}
+    kw = dict(splitter=SPLIT, count_tokens=lambda t: len(t.split()), max_tokens=100, select=lambda t, n: t)
+    out = reduce_concat(["Doanh thu đạt 999 tỷ đồng."], **kw, source="Doanh thu đạt 100 tỷ đồng.", factcheck="drop",
+                        report=report)
+    assert out == "Doanh thu đạt 999 tỷ đồng." and report == {"factcheck_dropped": 0, "factcheck_failed": True}
+
+
+def test_drop_keeps_sentences_split_inside_a_number_together():
+    src = "Lưu lượng tăng lên 45.000-48.000 xe mỗi ngày."
+    sents = ["Lưu lượng tăng lên 45.000-48.", "000 xe mỗi ngày."]    # bộ tách câu cắt ở "48. 000"
+    assert drop_unsupported(sents, src) == sents

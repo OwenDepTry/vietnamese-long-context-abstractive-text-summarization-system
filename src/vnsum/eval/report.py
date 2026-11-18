@@ -214,8 +214,10 @@ def write_report(
         llm_chars=cfg["systems"].get("llm_zeroshot", {}).get("max_input_chars", "—"),
         per_ds=", ".join(f"{k} {v:,} mẫu" for k, v in per_sample.drop_duplicates("id")["dataset"].value_counts().items()),
         threshold=cfg["eval_set"]["long_doc_threshold_tokens"],
-        stats_note=("Khoảng tin cậy và so sánh cặp ở trên dùng bootstrap trên toàn bộ tập, chưa tách theo dataset hay độ dài; "
-                    "các bảng theo tập con chỉ là trung bình điểm."
+        stats_note=(("Khoảng tin cậy và so sánh cặp ở trên lấy lại theo bài gốc (các mục WikiLingua cùng bài đi cùng nhau), "
+                     "phân tầng theo dataset; " if str((cfg.get("stats") or {}).get("cluster", "article")) == "article"
+                     else "Khoảng tin cậy và so sánh cặp ở trên lấy lại theo từng dòng; ")
+                    + "các bảng theo tập con chỉ là trung bình điểm."
                     if significance is not None else "Report này chưa có khoảng tin cậy hay kiểm định ý nghĩa thống kê."),
         human_note=("độ tin cậy của judge được đối chiếu với người chấm trong `human_eval/agreement.md` (nếu đã chạy);"
                     if cfg.get("human_eval") else "không có đối chứng người chấm;"),

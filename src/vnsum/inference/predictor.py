@@ -229,6 +229,7 @@ class SummaryResult:
     model_input: str = ""
     chunk_cache_hit: bool = False       # bản tóm tắt chunk lấy lại từ lần gọi trước (cùng văn bản)
     unsupported: list[str] = field(default_factory=list)   # số / ngày / tên riêng không có trong văn bản gốc
+    factcheck_failed: bool = False   # factcheck: drop mà MỌI câu đều bị đánh dấu -> giữ nguyên, cần kiểm tra lại
 
 
 class Summarizer:
@@ -390,11 +391,12 @@ class Summarizer:
         gen_ms = (time.perf_counter() - t) * 1000
         max_tokens = int(length_preset(self.cfg, length)["max_new_tokens"])
         reserve = self.counter.reserve_special_tokens
+        fc_report: dict = {}
         summary = reduce_concat(
             parts, splitter=self.splitter, count_tokens=self.counter.count, max_tokens=max_tokens,
             select=lambda text, n: self.extract(text, max_input_tokens=n + reserve),
             dedupe_threshold=float(ld.get("dedupe_threshold", 0.6)),
-            source=doc, factcheck=ld.get("factcheck", "off"),
+            source=doc, factcheck=ld.get("factcheck", "off"), report=fc_report,
         )
         joined = " ".join(p for p in parts if p)
         timings = {"preprocess_ms": t_pre, "generate_chunks_ms": gen_ms, "generate_ms": 0.0,
@@ -404,4 +406,5 @@ class Summarizer:
             model_input_tokens=max((self.counter.count(c.text) + reserve for c in chunks), default=0),
             new_tokens=self.counter.count(summary), generate_calls=0 if hit else self._n_batches(len(chunks)), timings_ms=timings,
             chunk_summaries=parts, model_input=joined, chunk_cache_hit=hit,
+            factcheck_failed=bool(fc_report.get("factcheck_failed")),
         )

@@ -157,10 +157,26 @@ def print_report(all_stats: list[dict[str, Any]], cfg: dict[str, Any]) -> None:
                 print(f"  {split}: {ds['strategy']} -> {extra}")
 
 
+def output_paths(cfg: dict[str, Any], limit: int | None, output_dir: str | None) -> tuple[Path, Path]:
+    """(thư mục Parquet, file thống kê). Chạy smoke (--limit) KHÔNG được ghi vào thư mục dữ liệu đầy đủ: trước
+    đây ``make smoke`` sau ``make prepare`` thay file train 116k dòng bằng vài chục dòng."""
+    default = Path(cfg["paths"]["processed_dir"])
+    if output_dir:
+        out = Path(output_dir)
+    elif limit is not None:
+        out = default.with_name(default.name + "_smoke")
+    else:
+        return default, Path(cfg["paths"]["stats_file"])
+    return out, out / "stats.json"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--config", required=True, help="đường dẫn YAML, vd. configs/data.yaml")
-    parser.add_argument("--limit", type=int, default=None, help="tổng số mẫu thô tối đa (smoke test)")
+    parser.add_argument("--limit", type=int, default=None,
+                        help="tổng số mẫu thô tối đa (smoke test); mặc định ghi vào <processed_dir>_smoke")
+    parser.add_argument("--output_dir", default=None,
+                        help="thư mục Parquet đầu ra (mặc định: paths.processed_dir; với --limit: <processed_dir>_smoke)")
     parser.add_argument("--log-level", default="INFO")
     args = parser.parse_args(argv)
     logging.basicConfig(level=args.log_level, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -180,7 +196,8 @@ def main(argv: list[str] | None = None) -> int:
         logger.info("--limit %d -> tối đa %d mẫu cho mỗi (dataset, split), %d cặp", args.limit, limit_per_split, pairs)
 
     counter = build_token_counter(cfg)
-    out_root = Path(cfg["paths"]["processed_dir"])
+    out_root, stats_path = output_paths(cfg, args.limit, args.output_dir)
+    logger.info("Ghi dữ liệu vào %s", out_root)
     all_stats: list[dict[str, Any]] = []
     for name in enabled:
         frames, info = process_dataset(name, cfg, counter, limit_per_split)
@@ -191,7 +208,6 @@ def main(argv: list[str] | None = None) -> int:
             logger.info("Đã ghi %s (%d dòng)", path, len(df))
         all_stats.append(summarize(name, frames, info, cfg))
 
-    stats_path = Path(cfg["paths"]["stats_file"])
     stats_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {"limit": args.limit, "limit_per_split": limit_per_split, "datasets": all_stats}
     stats_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")

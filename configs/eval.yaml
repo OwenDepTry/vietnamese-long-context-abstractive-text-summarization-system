@@ -280,6 +280,9 @@ judge:
   seed: 42
   systems: [lead3, vit5_lora, vit5_public, llm_zeroshot, vit5_lora_hier, vit5_lora_hier_concat, vit5_lora_hier_concat_b1, vit5_lora_hier_concat_fc, vit5_lora_api, vit5_distill]
   max_document_chars: 30000    # document dài hơn bị cắt (ghi cờ truncated trong cache)
+  # Khóa cache gồm hash của prompt thật (văn bản gốc sau cắt + bản tóm tắt + rubric). Dòng cache cũ (khóa chỉ
+  # có id + bản tóm tắt) vẫn dùng lại để khỏi trả phí chấm lại, có cảnh báo số dòng; đặt false nếu dữ liệu test đã đổi.
+  accept_legacy_cache: true
   prompt_version: v1           # đổi khi sửa rubric/prompt -> cache cũ không bị dùng lại
 
 bertscore:
@@ -303,6 +306,8 @@ stats:
   confidence: 0.95
   seed: 42
   reference_system: vit5_lora  # các hệ thống khác được so cặp với hệ thống này
+  # article: lấy lại theo BÀI GỐC (các mục WikiLingua cùng bài tương quan), phân tầng theo dataset; none: theo dòng.
+  cluster: article
 
 # Người chấm kiểm tra LLM judge: scripts/human_eval.py export | analyze (không gọi API).
 human_eval:

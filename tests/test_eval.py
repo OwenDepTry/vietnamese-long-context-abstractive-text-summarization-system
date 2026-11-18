@@ -151,6 +151,43 @@ def _judge_cfg():
     return cfg
 
 
+def test_run_judge_rescores_when_source_document_changes(tmp_path):
+    """Cùng id, cùng bản tóm tắt, văn bản gốc đổi nghĩa -> phải chấm lại (trước đây trả điểm cũ)."""
+    cfg = _judge_cfg()
+    item = {"id": "a", "document": "Nam nhận học bổng.", "prediction": "Nam nhận học bổng."}
+    cache = JudgeCache(tmp_path / "judge.jsonl")
+    fake = _FakeClient('{"score": 5, "unsupported_claims": [], "rationale": "Đúng."}')
+    run_judge("sys", [item], cfg, cache=cache, gate=ApiGate(allowed=True), client=fake)
+    changed = dict(item, document="Nam không nhận học bổng.")
+    gate = ApiGate(allowed=False)
+    assert run_judge("sys", [changed], cfg, cache=cache, gate=gate, client=fake) is None
+    assert gate.planned == {"judge:sys": 1}
+
+
+def test_run_judge_reuses_legacy_rows_with_warning(tmp_path, caplog):
+    """Dòng cache cũ (khóa không có hash prompt) vẫn dùng lại được -> không mất phí đã trả; tắt được bằng config."""
+    from vnsum.eval.judge import cache_key
+
+    cfg = _judge_cfg()
+    model, version = cfg["llm"]["judge"]["model"], str(cfg["judge"]["prompt_version"])
+    item = {"id": "a", "document": "Doc a.", "prediction": "Pred a."}
+    legacy = {"key": cache_key(model, version, "sys", "a", "Pred a."), "system": "sys", "id": "a", "score": 4,
+              "unsupported_claims": [], "rationale": "", "error": None, "raw": "{}"}
+    path = tmp_path / "judge.jsonl"
+    path.write_text(json.dumps(legacy) + "\n", encoding="utf-8")
+    with caplog.at_level("WARNING"):
+        out = run_judge("sys", [item], cfg, cache=JudgeCache(path), gate=ApiGate(allowed=False), client=None)
+    assert [r["score"] for r in out] == [4] and "cache cũ" in caplog.text
+    # Đã ghi dòng theo khóa mới -> lần sau không còn là legacy.
+    out2 = run_judge("sys", [item], cfg, cache=JudgeCache(path), gate=ApiGate(allowed=False), client=None)
+    assert [r["score"] for r in out2] == [4]
+    # Tắt chấp nhận legacy -> cần chấm lại.
+    cfg["judge"]["accept_legacy_cache"] = False
+    fresh = tmp_path / "fresh.jsonl"
+    fresh.write_text(json.dumps(legacy) + "\n", encoding="utf-8")
+    assert run_judge("sys", [item], cfg, cache=JudgeCache(fresh), gate=ApiGate(allowed=False), client=None) is None
+
+
 def test_run_judge_uses_cache_and_respects_api_gate(tmp_path):
     cfg = _judge_cfg()
     items = [{"id": "a", "document": "Doc a.", "prediction": "Pred a."},
@@ -619,3 +656,27 @@ def test_human_eval_unjudged_on_real_long_v2():
     items = select_items(ps, ["vit5_lora", "vit5_lora_hier_concat"], 40, 42, paired=True, require_judge=False)
     ids = items.groupby("system")["id"].apply(frozenset)
     assert len(items) == 40 and ids["vit5_lora"] == ids["vit5_lora_hier_concat"] and len(ids["vit5_lora"]) == 20
+
+
+def test_cluster_ids_group_wikilingua_sections_by_article():
+    from vnsum.eval.stats import cluster_ids
+
+    assert cluster_ids(["wikilingua_vi-941c8d585234-0", "wikilingua_vi-941c8d585234-12", "vietnews-test-15406"]) == [
+        "wikilingua_vi-941c8d585234", "wikilingua_vi-941c8d585234", "vietnews-test-15406"]
+
+
+def test_cluster_bootstrap_is_wider_when_sections_are_duplicated():
+    """Review lần 4: mục cùng bài tương quan -> bootstrap theo dòng cho CI quá hẹp. 20 bài x 10 mục giống hệt."""
+    import numpy as np
+
+    from vnsum.eval.stats import bootstrap_mean_ci, paired_bootstrap
+
+    rng = np.random.default_rng(0)
+    per_article = rng.normal(0, 1, 20)
+    x = np.repeat(per_article, 10)
+    clusters = [f"wikilingua_vi-a{i}" for i in range(20) for _ in range(10)]
+    _, lo_r, hi_r = bootstrap_mean_ci(x, 2000, 0.95, 1)
+    m, lo_c, hi_c = bootstrap_mean_ci(x, 2000, 0.95, 1, clusters=clusters, strata=["w"] * 200)
+    assert abs(m - x.mean()) < 1e-12 and (hi_c - lo_c) > 2 * (hi_r - lo_r)
+    res = paired_bootstrap(x + 1, x, 500, 0.95, 1, clusters=clusters, strata=["w"] * 200)
+    assert res["diff"] == pytest.approx(1.0) and res["ci_low"] == pytest.approx(1.0)

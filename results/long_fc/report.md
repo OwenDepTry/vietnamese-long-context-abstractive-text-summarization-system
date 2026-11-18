@@ -1,6 +1,6 @@
 # Phase 3 — Báo cáo đánh giá
 
-Sinh tự động lúc 2026-11-05 21:47 UTC bởi `scripts/evaluate.py`. Mọi con số dưới đây được tính từ `per_sample.csv` / `metrics.csv` trong cùng thư mục.
+Sinh tự động lúc 2026-11-06 14:16 UTC bởi `scripts/evaluate.py`. Mọi con số dưới đây được tính từ `per_sample.csv` / `metrics.csv` trong cùng thư mục.
 
 ## Thiết lập
 
@@ -18,7 +18,7 @@ Sinh tự động lúc 2026-11-05 21:47 UTC bởi `scripts/evaluate.py`. Mọi c
 | Hệ thống | n | ROUGE-1 | ROUGE-2 | ROUGE-L | BERTScore-F (raw) |
 |---|---|---|---|---|---|
 | `vit5_lora_hier_concat` | 225 | 30.90 | 15.04 | 22.29 | 57.08 |
-| `vit5_lora_hier_concat_fc` | 225 | 30.77 | 14.99 | 22.26 | 57.01 |
+| `vit5_lora_hier_concat_fc` | 225 | 30.83 | 15.04 | 22.27 | 57.03 |
 
 ## Theo dataset
 
@@ -27,14 +27,14 @@ Sinh tự động lúc 2026-11-05 21:47 UTC bởi `scripts/evaluate.py`. Mọi c
 | `vit5_lora_hier_concat` | vietnews | 100 | 27.84 | 13.70 | 19.49 | 51.65 |
 | `vit5_lora_hier_concat` | wikilingua_vi | 125 | 33.35 | 16.12 | 24.53 | 61.43 |
 | `vit5_lora_hier_concat_fc` | vietnews | 100 | 27.70 | 13.70 | 19.45 | 51.51 |
-| `vit5_lora_hier_concat_fc` | wikilingua_vi | 125 | 33.22 | 16.03 | 24.51 | 61.40 |
+| `vit5_lora_hier_concat_fc` | wikilingua_vi | 125 | 33.34 | 16.11 | 24.53 | 61.44 |
 
 ## Theo độ dài document (long vs short)
 
 | Hệ thống | Tập con | n | ROUGE-1 | ROUGE-2 | ROUGE-L | BERTScore-F |
 |---|---|---|---|---|---|---|
 | `vit5_lora_hier_concat` | long | 225 | 30.90 | 15.04 | 22.29 | 57.08 |
-| `vit5_lora_hier_concat_fc` | long | 225 | 30.77 | 14.99 | 22.26 | 57.01 |
+| `vit5_lora_hier_concat_fc` | long | 225 | 30.83 | 15.04 | 22.27 | 57.03 |
 
 ## Chỉ số phụ (toàn bộ tập đánh giá)
 
@@ -42,9 +42,9 @@ Lặp = tỷ lệ n-gram trong summary là bản lặp của n-gram đứng trư
 
 |  | Độ dài TB (âm tiết) | repetition 3gram (%) | novel 1gram (%) | novel 2gram (%) | số/tên không căn cứ (%) |
 |---|---|---|---|---|---|
-| `vit5_lora_hier_concat` | 54.0 | 1.86 | 1.59 | 18.81 | 6.67 |
-| `vit5_lora_hier_concat_fc` | 52.0 | 1.68 | 1.33 | 18.03 | 0.00 |
-| *reference (tham chiếu)* | 52.8 | 1.42 | 12.00 | 52.15 | 18.22 |
+| `vit5_lora_hier_concat` | 54.0 | 1.86 | 1.59 | 18.81 | 6.22 |
+| `vit5_lora_hier_concat_fc` | 52.1 | 1.68 | 1.33 | 18.07 | 0.00 |
+| *reference (tham chiếu)* | 52.8 | 1.42 | 12.00 | 52.15 | 18.67 |
 
 ## Khoảng tin cậy 95% (bootstrap, 1,000 lần lấy lại)
 
@@ -52,8 +52,8 @@ Lặp = tỷ lệ n-gram trong summary là bản lặp của n-gram đứng trư
 
 | Hệ thống | ROUGE-1 | ROUGE-2 | ROUGE-L | BERTScore-F |
 |---|---|---|---|---|
-| `vit5_lora_hier_concat` | 30.90 [29.36, 32.39] | 15.04 [13.79, 16.40] | 22.29 [20.89, 23.68] | 57.08 [55.98, 58.18] |
-| `vit5_lora_hier_concat_fc` | 30.77 [29.19, 32.29] | 14.99 [13.69, 16.38] | 22.26 [20.84, 23.69] | 57.01 [55.90, 58.12] |
+| `vit5_lora_hier_concat` | 30.90 [29.50, 32.31] | 15.04 [13.81, 16.34] | 22.29 [20.99, 23.60] | 57.08 [56.14, 57.96] |
+| `vit5_lora_hier_concat_fc` | 30.83 [29.36, 32.27] | 15.04 [13.71, 16.34] | 22.27 [20.87, 23.58] | 57.03 [56.10, 57.96] |
 
 ## Giới hạn của phương pháp đánh giá
 
@@ -64,5 +64,5 @@ Lặp = tỷ lệ n-gram trong summary là bản lặp của n-gram đứng trư
 - **Faithfulness ưu ái hệ thống chép nguyên văn:** Lead-3 chỉ chép câu từ văn bản gốc nên gần như luôn đạt điểm tối đa. Cần đọc faithfulness cùng tỷ lệ novel n-gram (mức độ diễn đạt lại) và ROUGE.
 - **LLM zero-shot** nhận document gốc đầy đủ (≤ 30000 ký tự) và sinh bằng API (không dùng được beam search / no_repeat_ngram), trong khi ViT5 nhận input đã lọc extractive ≤ 1024 token — hai điều kiện input khác nhau là có chủ đích (so sánh model ngữ cảnh dài với pipeline ngữ cảnh ngắn).
 - **ViT5 công khai** (VietAI/vit5-base-vietnews-summarization) được fine-tune trên VietNews; không kiểm chứng được split train của nó có trùng tập test ở đây hay không. Trên WikiLingua nó là out-of-domain.
-- Tập đánh giá là mẫu ngẫu nhiên (seed) của split test, thực tế gồm wikilingua_vi 125 mẫu, vietnews 100 mẫu; nhóm "long" (document > 1024 token) nhỏ hơn nhiều so với nhóm "short", nên chênh lệch ở nhóm long có độ bất định lớn hơn. Khoảng tin cậy và so sánh cặp ở trên dùng bootstrap trên toàn bộ tập, chưa tách theo dataset hay độ dài; các bảng theo tập con chỉ là trung bình điểm.
+- Tập đánh giá là mẫu ngẫu nhiên (seed) của split test, thực tế gồm wikilingua_vi 125 mẫu, vietnews 100 mẫu; nhóm "long" (document > 1024 token) nhỏ hơn nhiều so với nhóm "short", nên chênh lệch ở nhóm long có độ bất định lớn hơn. Khoảng tin cậy và so sánh cặp ở trên lấy lại theo bài gốc (các mục WikiLingua cùng bài đi cùng nhau), phân tầng theo dataset; các bảng theo tập con chỉ là trung bình điểm.
 
