@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 """Đưa model đã merge (+ bản ONNX INT8, tùy chọn) lên Hugging Face Hub, kèm model card sinh từ results/.
 
-Mặc định CHỈ CHẠY THỬ: ghi model card ra results/model_card.md và liệt kê file sẽ upload, không gửi gì. Thêm
+Mặc định CHỈ CHẠY THỬ: ghi model card ra results/main/model_card.md và liệt kê file sẽ upload, không gửi gì. Thêm
 --push để upload thật (cần đăng nhập: `huggingface-cli login`, hoặc biến môi trường HF_TOKEN). Repo mới tạo ở
 chế độ PRIVATE; thêm --public khi đã kiểm tra giấy phép dữ liệu (xem model card).
 
     python scripts/push_to_hub.py --repo_id <tên-tài-khoản>/vit5-vnsum --model_dir C:/vnsum-runs/vit5-vnsum-merged \\
         --onnx_dir C:/vnsum-runs/vit5-vnsum-merged-onnx/int8
-    # đọc results/model_card.md, rồi chạy lại cùng lệnh với --push
+    # đọc results/main/model_card.md, rồi chạy lại cùng lệnh với --push
 """
 
 from __future__ import annotations
@@ -37,8 +37,8 @@ def main(argv=None) -> int:
     p.add_argument("--repo_id", required=True, help="vd. ten-tai-khoan/vit5-vnsum")
     p.add_argument("--model_dir", required=True, help="thư mục model đã merge (scripts/merge_lora.py)")
     p.add_argument("--onnx_dir", default=None, help="thư mục ONNX INT8 (tùy chọn), upload vào onnx/int8/")
-    p.add_argument("--metrics", default="results/metrics.csv")
-    p.add_argument("--card_out", default="results/model_card.md")
+    p.add_argument("--metrics", default="results/main/metrics.csv")
+    p.add_argument("--card_out", default="results/main/model_card.md")
     p.add_argument("--push", action="store_true", help="upload thật (mặc định chỉ chạy thử)")
     p.add_argument("--public", action="store_true", help="tạo repo công khai (mặc định private)")
     args = p.parse_args(argv)

@@ -8,8 +8,8 @@ ViT5-base (`VietAI/vit5-base`) fine-tune bằng LoRA trên VietNews + WikiLingua
 |---|---|---|
 | 1 | Dữ liệu: tải, chuẩn hóa, lọc, xử lý văn bản dài | `data/processed/*.parquet` |
 | 2 | Training: ViT5 + LoRA, merge | model đã merge (ngoài repo) |
-| 3 | Evaluation: 4 hệ thống trên 1,910 mẫu test | [`results/report.md`](results/report.md), [`results/qualitative.md`](results/qualitative.md) |
-| 4 | Inference: ONNX (KV cache) + INT8, benchmark CPU/GPU | [`results/benchmark.md`](results/benchmark.md) |
+| 3 | Evaluation: 4 hệ thống trên 1,910 mẫu test | [`results/main/report.md`](results/main/report.md), [`results/main/qualitative.md`](results/main/qualitative.md) |
+| 4 | Inference: ONNX (KV cache) + INT8, benchmark CPU/GPU | [`results/inference/benchmark.md`](results/inference/benchmark.md) |
 | 5 | API (FastAPI) + UI (Streamlit) + Docker | `src/vnsum/api/`, `ui/`, `docker-compose.yml` |
 | 6 | Model card + đưa model lên Hugging Face Hub, demo trên Spaces, CI | `scripts/push_to_hub.py`, `demo/`, `.github/workflows/` |
 
@@ -20,7 +20,7 @@ ViT5-base (`VietAI/vit5-base`) fine-tune bằng LoRA trên VietNews + WikiLingua
  HF datasets ──► │ phase 1: chuẩn hóa, lọc, BM25    │──► data/processed/*.parquet
                  │ phase 2: ViT5 + LoRA ─► merge    │──► <MODEL_DIR>/vit5-vnsum-merged        (PyTorch)
                  │ phase 4: optimum export + INT8   │──► <MODEL_DIR>/vit5-vnsum-merged-onnx/  (fp32, int8)
-                 │ phase 3/4: evaluate / benchmark  │──► results/*.md
+                 │ phase 3/4: evaluate / benchmark  │──► results/main, results/inference
                  └──────────────────────────────────┘
                                    │ volume (read-only)
  trình duyệt ──► ui (Streamlit :8501) ──HTTP──► api (FastAPI :8000) ──► Summarizer
@@ -35,7 +35,7 @@ ViT5-base (`VietAI/vit5-base`) fine-tune bằng LoRA trên VietNews + WikiLingua
 
 ## Kết quả chính
 
-**Phase 3** — 1,910 mẫu test (VietNews 1,000 + WikiLingua-vi 910), faithfulness chấm bởi `claude-sonnet-4-6` trên 200 mẫu/hệ thống. Chi tiết, khoảng tin cậy và so sánh cặp: [`results/report.md`](results/report.md).
+**Phase 3** — 1,910 mẫu test (VietNews 1,000 + WikiLingua-vi 910), faithfulness chấm bởi `claude-sonnet-4-6` trên 200 mẫu/hệ thống. Chi tiết, khoảng tin cậy và so sánh cặp: [`results/main/report.md`](results/main/report.md).
 
 | Hệ thống | ROUGE-1 | ROUGE-2 | ROUGE-L | BERTScore-F (raw) | Faithfulness (1–5) |
 |---|---|---|---|---|---|
@@ -44,7 +44,7 @@ ViT5-base (`VietAI/vit5-base`) fine-tune bằng LoRA trên VietNews + WikiLingua
 | ViT5 công khai (VietAI) | 29.88 | 16.24 | 23.65 | 53.74 | 2.79 |
 | LLM zero-shot (gpt-6-luna) | 30.69 | 13.28 | 21.37 | 53.07 | 4.92 |
 
-**Phase 4** — 100 tài liệu test, beam 4, max 128 token, batch 1, i7-13620H + RTX 4050 Laptop. Chi tiết (RAM/VRAM, theo độ dài input, chất lượng): [`results/benchmark.md`](results/benchmark.md).
+**Phase 4** — 100 tài liệu test, beam 4, max 128 token, batch 1, i7-13620H + RTX 4050 Laptop. Chi tiết (RAM/VRAM, theo độ dài input, chất lượng): [`results/inference/benchmark.md`](results/inference/benchmark.md).
 
 | Thiết bị | Bản | p50 (ms) | p95 (ms) | Trên đĩa (MB) | ROUGE-L (Δ so với PyTorch) |
 |---|---|---|---|---|---|
@@ -60,9 +60,9 @@ Mục tiêu latency < 500 ms **không đạt** ở cấu hình trên (kể cả 
 | Thí nghiệm | Kết quả | Chi tiết |
 |---|---|---|
 | Văn bản dài: ghép bản tóm tắt chunk thay vì tóm tắt lại (`reduce: concat`) | 225 văn bản dài, ROUGE-L: concat **22.29**, extractive 20.70, extractive ép dài 20.55, tóm tắt lại 13.35 (chunk 128) / 13.48 (chunk 48). Cắt về độ dài của extractive: chưa đủ bằng chứng về khác biệt; so với extractive ép dài: concat hơn có ý nghĩa (xem Giới hạn) | [`results/long_v2/report.md`](results/long_v2/report.md), [`length_control.md`](results/long_v2/length_control.md) |
-| Tune `length_penalty` / `min_new_tokens` trên validation | +0.23 ROUGE-L, nằm trong nhiễu → giữ cấu hình cũ | [`results/tune_lengths.md`](results/tune_lengths.md) |
+| Tune `length_penalty` / `min_new_tokens` trên validation | +0.23 ROUGE-L, nằm trong nhiễu → giữ cấu hình cũ | [`results/inference/tune_lengths.md`](results/inference/tune_lengths.md) |
 | Distillation: train tiếp trên 4,999 bản tóm tắt do LLM viết | **Kém hơn**: ROUGE-L 24.33 so với 26.98 (−2.65, CI 95% [2.08, 3.21]), kém ở mọi tập con; dài hơn (35.2 so với 26.8 âm tiết) nhưng lệch văn phong reference. Chưa chấm faithfulness | [`results/distill/report.md`](results/distill/report.md) |
-| Đối chiếu LLM judge với người chấm (50 mục, chấm mù) | Kappa trọng số 0.70 (CI 95% [0.49, 0.85]), trùng khớp 66%, lệch ≤ 1 điểm 84% | [`results/human_eval/agreement.md`](results/human_eval/agreement.md) |
+| Đối chiếu LLM judge với người chấm (50 mục, chấm mù) | Kappa trọng số 0.70 (CI 95% [0.49, 0.85]), trùng khớp 66%, lệch ≤ 1 điểm 84% | [`results/main/human_eval/agreement.md`](results/main/human_eval/agreement.md) |
 | Văn bản dài: chấm người theo cặp, concat so với extractive (20 văn bản, chấm mù, độc lập với judge) | **Đầy đủ** 2.70 so với 1.90 (+0.80, CI 95% [+0.50, +1.05], p < 0.001); **trung thực** 3.65 so với 4.25 (−0.60, CI [−1.25, −0.05], p 0.04): concat đầy đủ hơn nhưng sai sự thật nhiều hơn | [`results/long_v2/human_eval/agreement.md`](results/long_v2/human_eval/agreement.md) |
 | Văn bản dài: đường xử lý thật của API (`vit5_lora_api`) | ROUGE-L 22.23, ngang concat của bên đánh giá (−0.06, CI [−0.41, +0.24]), hơn extractive +1.53 (CI [+0.40, +2.70]) | [`results/long_api/report.md`](results/long_api/report.md) |
 
@@ -90,14 +90,17 @@ src/vnsum/
   models/           phase 2: train (Seq2SeqTrainer + LoRA), lora, callbacks, rouge (tokenizer giữ dấu)
   eval/             phase 3: systems, metrics, bertscore, judge, llm_client, stats (bootstrap), report, human_eval
   inference/        phase 4: predictor (Summarizer), reduce (concat), export (ONNX/INT8/FP16), tokenizer, bench, pipeline_bench, hardware
-  model_card.py     model card cho Hugging Face Hub, sinh từ results/metrics.csv
+  model_card.py     model card cho Hugging Face Hub, sinh từ results/main/metrics.csv
   api/              phase 5: app (FastAPI), streaming (SSE), settings
 ui/app.py           phase 5: Streamlit, chỉ gọi API qua HTTP
 docker/             api.Dockerfile (multi-stage, CPU, non-root) · ui.Dockerfile
 demo/space/         demo trên Hugging Face Spaces (Docker: API + UI, model tải từ Hub)
 .github/workflows/  CI: test offline (Python 3.11, 3.12) + ruff
 tests/              pytest offline (tokenizer / backend giả); test model thật tự skip khi thiếu thư viện hoặc mạng
-results/            report.md, qualitative.md, benchmark.md + file số liệu thô
+results/            kết quả theo thí nghiệm, mục lục ở results/README.md
+  main/             phase 3: đánh giá chính 1,910 mẫu (report.md, qualitative.md, human_eval/, factcheck.md)
+  inference/        phase 4: benchmark ONNX, pipeline_benchmark, tune_lengths, lengths
+  long*/ distill/   văn bản dài (long, long_v2, long_api, long_fc) và distillation
 requirements*.txt   requirements.txt (phase 1–3) · -inference (4) · -api (5) · -ui (5) · -ci (CI, không có torch)
 ```
 
@@ -186,7 +189,7 @@ Ví dụ đầu ra của model đã merge (một bài trong tập test VietNews)
 ## Phase 3 — Evaluation
 
 ```bash
-# Smoke test (CPU, không gọi API trả phí) -> results/smoke/
+# Smoke test (CPU, không gọi API trả phí) -> results/main/smoke/
 python scripts/evaluate.py --config configs/eval.yaml --limit 10 --skip_judge --model_path <thư mục model đã merge>
 # Đầy đủ, chưa gọi API: tính mọi chỉ số offline + in ước tính số request cho LLM zero-shot và judge
 python scripts/evaluate.py --config configs/eval.yaml --model_path <thư mục model đã merge>
@@ -198,13 +201,13 @@ python scripts/evaluate.py --config configs/eval.yaml --model_path <...> --allow
 - **ROUGE** dùng tokenizer âm tiết giữ dấu; tokenizer mặc định của `rouge-score` xóa ký tự ngoài ASCII ("Hà Nội" và "Hè Nổi" bị coi là giống nhau, có test chứng minh).
 - **BERTScore** được cài đặt trực tiếp theo thuật toán gốc (greedy cosine, không idf), vì thư viện `bert-score` 0.3.13 không cắt input PhoBERT (tokenizer không khai báo `model_max_length`). Điểm là **raw**, vì không có baseline rescale cho PhoBERT.
 - **API trả phí** chỉ được gọi khi có `--allow_api`. Dự đoán và kết quả judge được ghi ngay ra cache trong `results/`, nên chạy lại không phải trả phí lần nữa.
-- **Khoảng tin cậy:** report có CI 95% bootstrap cho từng chỉ số và so sánh cặp (paired bootstrap) với ViT5 + LoRA trên cùng các mẫu; số liệu thô nằm ở `results/significance.csv`.
+- **Khoảng tin cậy:** report có CI 95% bootstrap cho từng chỉ số và so sánh cặp (paired bootstrap) với ViT5 + LoRA trên cùng các mẫu; số liệu thô nằm ở `results/main/significance.csv`.
 - **Kiểm tra judge bằng người chấm** (không gọi API):
 
   ```bash
-  python scripts/human_eval.py export --config configs/eval.yaml    # -> results/human_eval/items.md + annotation_sheet.csv
+  python scripts/human_eval.py export --config configs/eval.yaml    # -> results/main/human_eval/items.md + annotation_sheet.csv
   # đọc items.md, điền human_score (1–5) vào annotation_sheet.csv
-  python scripts/human_eval.py analyze --config configs/eval.yaml   # -> results/human_eval/agreement.md
+  python scripts/human_eval.py analyze --config configs/eval.yaml   # -> results/main/human_eval/agreement.md
   ```
 
   Bộ chấm gồm 50 mục lấy ngẫu nhiên (seed) từ các mẫu judge đã chấm, chia đều cho ViT5 + LoRA, ViT5 công khai và LLM zero-shot, ẩn tên hệ thống và điểm judge. `analyze` báo tỷ lệ trùng khớp, tỷ lệ lệch ≤ 1 điểm, Cohen's kappa trọng số bậc hai (kèm CI bootstrap), Spearman và ma trận nhầm lẫn.
@@ -229,7 +232,7 @@ python scripts/benchmark.py --config configs/inference.yaml --model_path <model 
 - **`Summarizer`** (`src/vnsum/inference/predictor.py`): một interface cho backend PyTorch và ONNX, ba mức độ dài `short/medium/long` (max_new_tokens 48/128/256; short thêm `length_penalty` 0.6, long thêm `min_new_tokens` 64 và `length_penalty` 2.0; medium giữ đúng cấu hình phase 3), văn bản dài xử lý theo `long_document.strategy` (đưa thẳng / extractive filter như lúc train / hierarchical: tóm tắt từng chunk rồi tóm tắt bản ghép).
 - **Benchmark:** cùng 100 tài liệu test và generation config với phase 3, 5 lần warmup, mỗi lượt chạy một process riêng; đo p50/p95, throughput, RAM/VRAM đỉnh, kích thước trên đĩa và ROUGE-L so với PyTorch (cảnh báo khi giảm quá 1 điểm); ghi cấu hình phần cứng thật.
 - **Spin-wait của ONNX Runtime** được tắt (`onnx.allow_spinning: false`): khi bật, thread pool của ORT giành CPU với PyTorch trong vòng beam search (đo bằng `scripts/profile_onnx.py`: 3,829 → 1,683 ms trên 2 tài liệu).
-- **Đo thêm cấu hình:** `--num_beams 1` (greedy), `--length short`, `--tag <tên>` để ghi ra `results/benchmark_<tên>.md` mà không ghi đè bản chính.
+- **Đo thêm cấu hình:** `--num_beams 1` (greedy), `--length short`, `--tag <tên>` để ghi ra `results/inference/benchmark_<tên>.md` mà không ghi đè bản chính.
 - **FP16 không dùng được:** chuyển FP32 → FP16 (2 lần thử, lần 2 giữ LayerNorm/residual/softmax/FFN đầu ra ở FP32) đều cho chuỗi vô nghĩa, trong khi ONNX FP32 trên cùng GPU cho kết quả đúng (`scripts/check_gpu_onnx.py`). Cờ `--fp16` vẫn còn nhưng không nằm trong benchmark.
 
 ### Benchmark đường xử lý của API
@@ -243,9 +246,9 @@ Mô phỏng đúng việc UI làm: 3 request (short, medium, long) cho cùng vă
 hierarchical concat). So hai biến thể trên cùng tài liệu: **cũ** (tóm tắt chunk từng cái, mỗi mức độ dài sinh lại) và
 **hiện tại** (`long_document.chunk_batch_size`: sinh chunk theo batch; `chunk_cache_size`: nhớ bản tóm tắt chunk của
 văn bản gần nhất, nên mức độ dài thứ 2 và 3 không sinh lại). Báo latency theo chiến lược, tổng thời gian chờ cho 3
-mức, theo số chunk, và % bản tóm tắt giống hệt nhau giữa hai biến thể → `results/pipeline_benchmark.md`.
+mức, theo số chunk, và % bản tóm tắt giống hệt nhau giữa hai biến thể → `results/inference/pipeline_benchmark.md`.
 
-Kết quả (40 văn bản test: 20 ngắn, 20 dài; PyTorch bf16, RTX 4050 Laptop; [`results/pipeline_benchmark.md`](results/pipeline_benchmark.md)):
+Kết quả (40 văn bản test: 20 ngắn, 20 dài; PyTorch bf16, RTX 4050 Laptop; [`results/inference/pipeline_benchmark.md`](results/inference/pipeline_benchmark.md)):
 
 | Tổng thời gian chờ cho 3 mức độ dài | Cũ: p50 / p95 (ms) | Hiện tại: p50 / p95 (ms) | Lần gọi model (cũ → hiện tại) |
 |---|---|---|---|
@@ -326,16 +329,16 @@ cần chạy trên máy có GPU: `tests/test_vit5_tokenizer.py`, phần ONNX c�
 
 ```powershell
 python scripts/push_to_hub.py --repo_id <tài-khoản>/vit5-vnsum --model_dir C:/vnsum-runs/vit5-vnsum-merged --onnx_dir C:/vnsum-runs/vit5-vnsum-merged-onnx/int8
-# chạy thử: chỉ ghi results/model_card.md và liệt kê file. Đọc lại, rồi thêm --push (cần huggingface-cli login).
+# chạy thử: chỉ ghi results/main/model_card.md và liệt kê file. Đọc lại, rồi thêm --push (cần huggingface-cli login).
 ```
 
-Model card sinh từ `results/metrics.csv` (`src/vnsum/model_card.py`), gồm số đánh giá, cách dùng, giới hạn và giấy
+Model card sinh từ `results/main/metrics.csv` (`src/vnsum/model_card.py`), gồm số đánh giá, cách dùng, giới hạn và giấy
 phép dữ liệu. Repo mới tạo ở chế độ **private**; chỉ thêm `--public` khi đã kiểm tra giấy phép của VietNews. Demo trên
 Hugging Face Spaces (Docker, CPU): xem [`demo/README.md`](demo/README.md).
 
 ## Giới hạn còn lại
 
-- **Mức độ dài:** bản đầu chỉ có giới hạn trên (`max_new_tokens`), nên khi model tự dừng sớm ba mức ra cùng một bản (đã gặp trên UI: 17 token ở cả ba mức). Đã thêm `min_new_tokens` / `length_penalty` cho short và long; đo mức khác biệt bằng `scripts/compare_lengths.py` (→ `results/lengths.md`).
+- **Mức độ dài:** bản đầu chỉ có giới hạn trên (`max_new_tokens`), nên khi model tự dừng sớm ba mức ra cùng một bản (đã gặp trên UI: 17 token ở cả ba mức). Đã thêm `min_new_tokens` / `length_penalty` cho short và long; đo mức khác biệt bằng `scripts/compare_lengths.py` (→ `results/inference/lengths.md`).
 - **Ngoài miền dữ liệu train** (tin tức VietNews, hướng dẫn wikiHow), ví dụ văn bản hành chính dạng danh sách, model thường chỉ chép câu mở đầu — thói quen học từ tin tức, nơi câu đầu thường là tóm tắt tốt.
 - Latency < 500 ms chưa đạt ở cấu hình đã đo (beam 4, batch 1); greedy, mức `short` hay batch lớn hơn chưa được benchmark.
 - Docker image chỉ có bản CPU; GPU (ONNX FP32 nhanh nhất trong benchmark) mới chạy được ngoài Docker.
@@ -345,7 +348,7 @@ Hugging Face Spaces (Docker, CPU): xem [`demo/README.md`](demo/README.md).
   - *Diễn giải (giả thuyết, chưa kiểm chứng):* kết quả gợi ý lợi thế của concat nằm ở chỗ viết được bản tóm tắt dài cỡ reference từ nhiều phần văn bản, còn ép một lần sinh viết dài thì khớp reference kém hơn. ROUGE chỉ đo độ khớp với reference, không đo độ đầy đủ hay tính đúng sự thật; faithfulness của concat chưa được chấm. Cần đánh giá độ đầy đủ và tính trung thực (người chấm hoặc judge) trên cùng các văn bản dài để xác nhận. Concat tốn 2–4 lần sinh. Nhóm dài chỉ có 225/1,910 mẫu.
   - *Chấm người (20 văn bản dài, theo cặp, một người chấm, chấm mù và độc lập với judge; `results/long_v2/human_eval/`):* concat **đầy đủ hơn** (2.70 so với 1.90, +0.80, CI 95% [+0.50, +1.05]) nhưng **kém trung thực hơn** (3.65 so với 4.25, −0.60, CI [−1.25, −0.05], p 0.04): 6/20 bản concat bị chấm 1–2 điểm trung thực so với 3/20 của extractive (vd. sai ngày đăng ký, đổi tên luật sư, sai khóa đại hội). Giả thuyết về độ đầy đủ được xác nhận; đổi lại là nhiều lỗi sự thật hơn, có lẽ vì concat sinh nhiều nội dung hơn từ nhiều chunk. Mẫu nhỏ và một người chấm: mức giảm trung thực sát ngưỡng ý nghĩa, cần người chấm thứ hai. Hướng tiếp theo: kiểm tra sự thật sau khi sinh (đối chiếu tên riêng, ngày, số liệu với văn bản gốc).
 - **Kiểm tra sự thật bề mặt (`src/vnsum/factcheck.py`):** đánh dấu câu có số, ngày hoặc tên riêng không tìm thấy trong văn bản gốc (bỏ từ viết hoa đầu câu và chữ cái đơn; chuỗi tên phải tách được thành các tên có trong bài; viết tắt và số La Mã phân biệt hoa thường). Quy tắc được chỉnh trên 40 mục người chấm ở `results/long_v2/human_eval` (khoảng một nửa lỗi trong ghi chú là sai số / tên; nửa còn lại là lỗi quan hệ như gán nhầm lời nói, đảo ý, mà đối chiếu chuỗi không bắt được).
-  - *Kiểm chứng độc lập* (`results/factcheck.md`, 800 bản tóm tắt judge đã chấm, không dùng khi chỉnh quy tắc): bản bị đánh dấu có faithfulness TB **2.66** so với **4.28**, tỷ lệ judge ≤ 2 là **58%** so với **14%** (gấp ~4 lần); nhưng chỉ phủ **21%** số bản judge chấm ≤ 2. Bộ 50 mục người chấm ở `results/human_eval` (cũng độc lập): 3.40 so với 4.51 (5 mục bị đánh dấu). Tỷ lệ bị đánh dấu trên 1,910 mẫu test: Lead-3 0.0% (chép câu nên không thể thêm số / tên — kiểm tra hợp lý), ViT5 + LoRA 4.9%, LLM zero-shot 4.5%, ViT5 công khai 12.5%, reference 25.4% (bản tóm tắt gốc hay nêu thông tin không có trong thân bài, nên con số là mức nền, không phải tỷ lệ bịa).
+  - *Kiểm chứng độc lập* (`results/main/factcheck.md`, 800 bản tóm tắt judge đã chấm, không dùng khi chỉnh quy tắc): bản bị đánh dấu có faithfulness TB **2.66** so với **4.28**, tỷ lệ judge ≤ 2 là **58%** so với **14%** (gấp ~4 lần); nhưng chỉ phủ **21%** số bản judge chấm ≤ 2. Bộ 50 mục người chấm ở `results/main/human_eval` (cũng độc lập): 3.40 so với 4.51 (5 mục bị đánh dấu). Tỷ lệ bị đánh dấu trên 1,910 mẫu test: Lead-3 0.0% (chép câu nên không thể thêm số / tên — kiểm tra hợp lý), ViT5 + LoRA 4.9%, LLM zero-shot 4.5%, ViT5 công khai 12.5%, reference 25.4% (bản tóm tắt gốc hay nêu thông tin không có trong thân bài, nên con số là mức nền, không phải tỷ lệ bịa).
   - *Bỏ câu bị đánh dấu trong concat* (`results/long_fc`, 225 văn bản dài): đổi 16 văn bản; ROUGE-L −0.03 (CI 95% [−0.28, +0.19]), BERTScore −0.07, tỷ lệ bị đánh dấu 6.7% → 0%. **Bật mặc định** cho API (`long_document.factcheck: drop`) vì sai số / tên gây hại hơn mất một câu; nhưng mức cải thiện faithfulness của việc bỏ câu **chưa đo trực tiếp** (cần judge hoặc người chấm), và có đánh dấu nhầm (bài viết tắt "Bộ GTVT" còn bản tóm tắt viết đầy đủ → mất một câu đúng). Ví dụ bắt đúng: "xã Tóc Tiên, huyện Hóc Môn, TP. HCM" (Tóc Tiên không thuộc Hóc Môn).
   - Cũng dùng làm chỉ số `unsupported_pct` trong báo cáo đánh giá (`aux_metrics.factcheck`) và cảnh báo trên API / UI (`factcheck_warnings`, trường `unsupported`; không sửa bản tóm tắt).
 - **Bỏ câu trùng (đã sửa):** bản đầu chỉ so tỷ lệ bigram nên gộp nhầm câu khác số liệu ("doanh thu 2023 đạt 100 tỷ" / "2024 đạt 200 tỷ") hoặc khác phủ định ("đã" / "chưa xác nhận"). Review lần 2 tìm thêm hai trường hợp: tên riêng đứng đầu câu ("Nam" / "Lan đã nhận học bổng...") và cùng tập số nhưng đảo quan hệ ("2023 đạt 100, 2024 đạt 200" / "2023 đạt 200, 2024 đạt 100"). Nay câu chỉ bị bỏ khi mọi từ viết hoa của nó (kể cả đầu câu) có trong câu được giữ, các số xuất hiện theo **cùng thứ tự**, và hai câu cùng phủ định; không chắc thì giữ cả hai (`tests/test_reduce.py`). Vẫn chỉ là xấp xỉ: không phân tích được quan hệ cú pháp. Đo lại sau mỗi lần sửa: ROUGE-L 22.25 → 22.26 → 22.29, không làm giảm chất lượng.

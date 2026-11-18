@@ -5,9 +5,9 @@
 * Đối chiếu với điểm faithfulness của LLM judge (nếu per_sample.csv có): dữ liệu ĐỘC LẬP với 40 mục người chấm
   đã dùng để chỉnh quy tắc, nên đây mới là phép kiểm chứng khách quan.
 * Đối chiếu với điểm người chấm (human_eval/merged.csv, nếu có). Bộ 40 mục trong results/long_v2 đã dùng để chỉnh
-  quy tắc (chỉ tham khảo); bộ 50 mục trong results/human_eval thì độc lập.
+  quy tắc (chỉ tham khảo); bộ 50 mục trong results/main/human_eval thì độc lập.
 
-    python scripts/factcheck_report.py --config configs/eval.yaml --results_dir results
+    python scripts/factcheck_report.py --config configs/eval.yaml --results_dir results/main
     python scripts/factcheck_report.py --config configs/eval.yaml --results_dir results/long_v2
 
 Ghi <results_dir>/factcheck.md.
@@ -90,7 +90,7 @@ def build_report(per_sample, documents, human=None, results_dir="") -> str:
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--config", required=True)
-    p.add_argument("--results_dir", default="results")
+    p.add_argument("--results_dir", default="results/main")
     args = p.parse_args(argv)
 
     import pandas as pd

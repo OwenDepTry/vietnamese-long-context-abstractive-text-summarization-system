@@ -19,8 +19,8 @@ checkpoints/
 *.bin
 *.safetensors
 
-# Kết quả smoke test phase 3 (results/ đầy đủ thì commit được)
-results/smoke/
+# Kết quả smoke test phase 3 (results/main/smoke, results/inference/smoke...; results/ đầy đủ thì commit được)
+results/**/smoke/
 
 # Bí mật
 .env

@@ -2,7 +2,7 @@
 """Phase 3: đánh giá và so sánh các hệ thống tóm tắt.
 
 Ví dụ:
-    # Smoke test CPU (không gọi API trả phí, không chấm judge) -> results/smoke/
+    # Smoke test CPU (không gọi API trả phí, không chấm judge) -> results/main/smoke/
     python scripts/evaluate.py --config configs/eval.yaml --limit 10 --skip_judge
     # Đầy đủ, KHÔNG gọi API: in ước tính số request cho LLM zero-shot + judge
     python scripts/evaluate.py --config configs/eval.yaml --model_path C:/vnsum-runs/vit5-vnsum-merged
@@ -51,7 +51,7 @@ def parse_args(argv=None):
     p.add_argument("--systems", default=None, help="danh sách hệ thống, phân cách bằng dấu phẩy (mặc định: mọi hệ thống enabled)")
     p.add_argument("--model_path", default=None, help="đường dẫn model ViT5 LoRA đã merge (override systems.vit5_lora.model_path)")
     p.add_argument("--subset", choices=["all", "long"], default="all",
-                   help="long: chỉ các mẫu is_long (mặc định ghi vào <results_dir>/long, không đụng kết quả chính)")
+                   help="long: chỉ các mẫu is_long (mặc định ghi vào results/long, cạnh results/main, không đụng kết quả chính)")
     p.add_argument("--judge_sample_size", type=int, default=None, help="override judge.sample_size (vd. 225 = cả nhóm dài)")
     p.add_argument("--system_model", action="append", default=[], metavar="TÊN=ĐƯỜNG_DẪN",
                    help="đường dẫn model cho một hệ thống seq2seq có model_path null (vd. vit5_distill=C:/vnsum-runs/...); lặp lại được")
@@ -84,7 +84,7 @@ def main(argv=None) -> int:
         cfg["paths"]["processed_dir"] = args.processed_dir
     results_dir = Path(args.results_dir or cfg["paths"]["results_dir"])
     if args.subset == "long" and not args.results_dir:
-        results_dir = results_dir / "long"
+        results_dir = results_dir.parent / "long"  # results/main -> results/long (cạnh kết quả chính)
     if args.limit:
         results_dir = results_dir / "smoke"
     if args.judge_sample_size:

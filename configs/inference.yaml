@@ -104,7 +104,7 @@ long_document:
   chunk_cache_size: 16
   # Bỏ câu có số / ngày / tên riêng không có trong văn bản gốc trước khi ghép (vnsum.factcheck): off | drop.
   # Chấm người: concat đầy đủ hơn nhưng sai sự thật nhiều hơn extractive. Đối chiếu độc lập với judge: bản bị
-  # đánh dấu có tỷ lệ judge ≤ 2 là 58% so với 14% (results/factcheck.md); bỏ câu không làm giảm ROUGE-L trên 225
+  # đánh dấu có tỷ lệ judge ≤ 2 là 58% so với 14% (results/main/factcheck.md); bỏ câu không làm giảm ROUGE-L trên 225
   # văn bản dài (−0.03, CI [−0.28, +0.19], results/long_fc). Có đánh dấu nhầm (vd. bài viết tắt "Bộ GTVT", bản
   # tóm tắt viết đầy đủ) nên đôi khi mất một câu đúng. Đặt "off" để tắt (trong ngoặc kép: YAML đọc off thành false).
   factcheck: drop
@@ -118,7 +118,7 @@ benchmark:
   latency_target_ms: 500
   rouge_drop_warning: 1.0      # cảnh báo nếu ROUGE-L của ONNX INT8 thấp hơn PyTorch quá số điểm này
   length_buckets: [256, 512]   # nhóm độ dài input (token) khi báo latency: ≤256, 257–512, >512
-  results_dir: results
+  results_dir: results/inference
 
 # Phase 5 — API (src/vnsum/api). Đường dẫn model / backend lấy từ biến môi trường (xem .env.example).
 api:

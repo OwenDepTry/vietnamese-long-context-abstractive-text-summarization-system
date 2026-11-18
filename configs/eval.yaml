@@ -10,7 +10,7 @@ seed: 42
 
 paths:
   processed_dir: data/processed
-  results_dir: results
+  results_dir: results/main      # kết quả chính; --subset long ghi ra results/long (cạnh main)
   # Nếu systems.vit5_lora.model_path = null -> dùng paths.merged_dir của file này.
   train_config: configs/train.yaml
 
@@ -179,7 +179,7 @@ systems:
     # long_document: {chunk_batch_size: 1}   # override tùy chọn để đối chứng
 
   # Bước 2: cùng model, tham số độ dài đã tune trên VALIDATION (scripts/tune_lengths.py ->
-  # results/tune_lengths.md: +0.23 ROUGE-L, không dùng). Nay dùng làm ĐỐI CHỨNG ĐỘ DÀI cho văn bản dài: ép
+  # results/inference/tune_lengths.md: +0.23 ROUGE-L, không dùng). Nay dùng làm ĐỐI CHỨNG ĐỘ DÀI cho văn bản dài: ép
   # extractive viết dài (min 64 token ≈ 60 âm tiết) để so với concat ở độ dài tương đương
   # (results/long_v2, scripts/length_control.py). Đổi generation dưới đây thì cache tự sinh lại.
   #   python scripts/evaluate.py --config configs/eval.yaml --subset long \

@@ -10,7 +10,7 @@ Khác ``scripts/benchmark.py`` (so backend, input extractive cố định), scri
     python scripts/benchmark_pipeline.py --config configs/inference.yaml --model_path C:/vnsum-runs/vit5-vnsum-merged
     # nhanh: --n_short 5 --n_long 5
 
-Model chỉ nạp một lần; các biến thể dùng chung backend. Kết quả: results/pipeline_benchmark.md (+ .csv).
+Model chỉ nạp một lần; các biến thể dùng chung backend. Kết quả: results/inference/pipeline_benchmark.md (+ .csv).
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ def main(argv=None) -> int:
     p.add_argument("--warmup", type=int, default=2, help="số văn bản chạy trước, không tính")
     p.add_argument("--ablation", action="store_true",
                    help="4 biến thể: batch 1/4 × có/không dùng lại chunk (tách nguồn gốc tốc độ và khác biệt output)")
-    p.add_argument("--out", default=None, help="mặc định results/pipeline_benchmark.md (--ablation: _ablation.md)")
+    p.add_argument("--out", default=None, help="mặc định results/inference/pipeline_benchmark.md (--ablation: _ablation.md)")
     args = p.parse_args(argv)
 
     import pandas as pd
@@ -93,7 +93,7 @@ def main(argv=None) -> int:
         f"chunk_cache_size {ld.get('chunk_cache_size', 0)}; beam search như config (không phải streaming).",
     ]
     report = render_report(results, header=header, memory=memory)
-    out = Path(args.out or ("results/pipeline_benchmark_ablation.md" if args.ablation else "results/pipeline_benchmark.md"))
+    out = Path(args.out or ("results/inference/pipeline_benchmark_ablation.md" if args.ablation else "results/inference/pipeline_benchmark.md"))
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(report, encoding="utf-8")
     pd.concat([df.assign(variant=n) for n, df in results.items()]).to_csv(out.with_suffix(".csv"), index=False,

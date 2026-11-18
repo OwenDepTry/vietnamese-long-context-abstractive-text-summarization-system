@@ -20,10 +20,10 @@ def _load(rel: str, name: str):
 
 
 def test_model_card_uses_reported_numbers():
-    card = build_model_card(load_metrics(ROOT / "results" / "metrics.csv"), "user/vit5-vnsum", has_onnx=True)
+    card = build_model_card(load_metrics(ROOT / "results" / "main" / "metrics.csv"), "user/vit5-vnsum", has_onnx=True)
     assert card.startswith("---\nlanguage:\n- vi")
     assert "base_model: VietAI/vit5-base" in card and "pipeline_tag: summarization" in card
-    # Cùng số với results/report.md: ROUGE-L 26.98 (model này), 23.65 (ViT5 công khai), faithfulness 4.01.
+    # Cùng số với results/main/report.md: ROUGE-L 26.98 (model này), 23.65 (ViT5 công khai), faithfulness 4.01.
     assert "| **Model này** (ViT5-base + LoRA) | 33.46 | 18.42 | 26.98 | 58.68 | 4.01 |" in card
     assert "| VietAI/vit5-base-vietnews-summarization | 29.88 | 16.24 | 23.65 |" in card
     assert "| VietNews | 1,000 |" in card and "1,910 mẫu test" in card
@@ -37,7 +37,7 @@ def test_push_to_hub_dry_run_does_not_upload(tmp_path, capsys):
         (model / name).write_bytes(b"x" * 10)
     mod = _load("scripts/push_to_hub.py", "push_to_hub")
     card = tmp_path / "card.md"
-    assert mod.main(["--repo_id", "u/m", "--model_dir", str(model), "--metrics", str(ROOT / "results" / "metrics.csv"),
+    assert mod.main(["--repo_id", "u/m", "--model_dir", str(model), "--metrics", str(ROOT / "results" / "main" / "metrics.csv"),
                      "--card_out", str(card)]) == 0
     out = capsys.readouterr().out
     assert "CHƯA upload" in out and "private" in out and "notes.txt" not in out

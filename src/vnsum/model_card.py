@@ -1,6 +1,6 @@
 """Model card (README.md trên Hugging Face Hub) sinh từ kết quả đánh giá trong ``results/``.
 
-Số liệu lấy từ ``results/metrics.csv`` (phase 3) để model card không lệch với báo cáo; phần còn lại là mô tả
+Số liệu lấy từ ``results/main/metrics.csv`` (phase 3) để model card không lệch với báo cáo; phần còn lại là mô tả
 cố định của dự án. Không phụ thuộc torch / huggingface_hub.
 """
 

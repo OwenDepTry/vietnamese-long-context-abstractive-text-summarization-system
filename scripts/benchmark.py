@@ -2,9 +2,9 @@
 """Phase 4: benchmark PyTorch vs ONNX (FP32 / INT8 / FP16) trên CPU và GPU.
 
 Chạy trong .venv-onnx, sau scripts/export_onnx.py:
-    # Smoke test (5 tài liệu) -> results/smoke/benchmark.md
+    # Smoke test (5 tài liệu) -> results/inference/smoke/benchmark.md
     python scripts/benchmark.py --config configs/inference.yaml --model_path C:/vnsum-runs/vit5-vnsum-merged --limit 5 --device cpu
-    # Đầy đủ (100 tài liệu, CPU + GPU) -> results/benchmark.md
+    # Đầy đủ (100 tài liệu, CPU + GPU) -> results/inference/benchmark.md
     python scripts/benchmark.py --config configs/inference.yaml --model_path C:/vnsum-runs/vit5-vnsum-merged
 
 Mỗi lượt chạy (backend × thiết bị) chạy trong một process riêng để đo RAM/VRAM đỉnh không lẫn nhau.
@@ -39,7 +39,7 @@ def parse_args(argv=None):
     p.add_argument("--runs", default=None, help=f"chọn lượt chạy, phân cách dấu phẩy: {','.join(RUNS)}")
     p.add_argument("--length", default=None, help="mức độ dài (mặc định benchmark.length)")
     p.add_argument("--num_beams", type=int, default=None, help="override generation.num_beams (vd. 1 = greedy)")
-    p.add_argument("--tag", default=None, help="hậu tố tên kết quả: results/benchmark_<tag>.md (không ghi đè bản chính)")
+    p.add_argument("--tag", default=None, help="hậu tố tên kết quả: results/inference/benchmark_<tag>.md (không ghi đè bản chính)")
     p.add_argument("--warmup", type=int, default=None)
     p.add_argument("--worker", default=None, help=argparse.SUPPRESS)
     p.add_argument("--out", default=None, help=argparse.SUPPRESS)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""So sánh ba mức độ dài short / medium / long trên cùng tài liệu test -> results/lengths.md.
+"""So sánh ba mức độ dài short / medium / long trên cùng tài liệu test -> results/inference/lengths.md.
 
 Đo cho từng mức: số token sinh (TB / trung vị), độ dài (âm tiết), latency, ROUGE-L so với reference,
 tỷ lệ trigram lặp; và tỷ lệ tài liệu mà hai mức cho ra bản tóm tắt giống hệt nhau.
@@ -34,7 +34,7 @@ def main(argv=None) -> int:
     p.add_argument("--device", choices=["auto", "cpu", "cuda"], default=None)
     p.add_argument("--n", type=int, default=20, help="số tài liệu test")
     p.add_argument("--text_file", default=None, help="thêm một văn bản riêng vào cuối report")
-    p.add_argument("--out", default="results/lengths.md")
+    p.add_argument("--out", default="results/inference/lengths.md")
     args = p.parse_args(argv)
 
     from vnsum.eval.config import load_eval_config

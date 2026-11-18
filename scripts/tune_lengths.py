@@ -2,14 +2,14 @@
 """Bước 2 — tune length_penalty / min_new_tokens của mức `medium` trên tập VALIDATION.
 
 Thử lưới nhỏ tham số trên cùng các mẫu validation (seed), chấm ROUGE so với reference, chọn cấu hình
-ROUGE-L cao nhất mà không làm tăng lặp quá ngưỡng -> results/tune_lengths.md (+ .csv). Không tự sửa config.
+ROUGE-L cao nhất mà không làm tăng lặp quá ngưỡng -> results/inference/tune_lengths.md (+ .csv). Không tự sửa config.
 
     # thử nhanh (vài phút):
     python scripts/tune_lengths.py --config configs/inference.yaml --model_path C:/vnsum-runs/vit5-vnsum-merged --n 40
     # đầy đủ (GPU khuyến nghị):
     python scripts/tune_lengths.py --config configs/inference.yaml --model_path C:/vnsum-runs/vit5-vnsum-merged
 
-Bản tóm tắt của từng ứng viên được lưu ngay vào results/tune_lengths/<ứng viên>.jsonl, nên chạy lại sau
+Bản tóm tắt của từng ứng viên được lưu ngay vào results/inference/tune_lengths/<ứng viên>.jsonl, nên chạy lại sau
 khi bị ngắt sẽ bỏ qua phần đã xong.
 """
 
@@ -52,7 +52,7 @@ def main(argv=None) -> int:
     p.add_argument("--min_new_tokens", default="0,16,24,32")
     p.add_argument("--max_repetition_increase", type=float, default=1.0,
                    help="loại ứng viên có lặp 3-gram cao hơn baseline quá số điểm này")
-    p.add_argument("--out", default="results/tune_lengths.md")
+    p.add_argument("--out", default="results/inference/tune_lengths.md")
     args = p.parse_args(argv)
 
     import pandas as pd

@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 """Đối chiếu LLM-as-Judge với điểm người chấm (không gọi API).
 
-    # 1) Tạo bộ chấm ẩn danh từ kết quả evaluate.py (cần results/per_sample.csv + data/processed)
+    # 1) Tạo bộ chấm ẩn danh từ kết quả evaluate.py (cần results/main/per_sample.csv + data/processed)
     python scripts/human_eval.py export --config configs/eval.yaml
-    # 2) Đọc results/human_eval/items.md, điền human_score (1–5) vào results/human_eval/annotation_sheet.csv
-    # 3) Tính mức đồng thuận -> results/human_eval/agreement.md
+    # 2) Đọc results/main/human_eval/items.md, điền human_score (1–5) vào results/main/human_eval/annotation_sheet.csv
+    # 3) Tính mức đồng thuận -> results/main/human_eval/agreement.md
     python scripts/human_eval.py analyze --config configs/eval.yaml
 """
 

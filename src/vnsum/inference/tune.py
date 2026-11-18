@@ -1,6 +1,6 @@
 """Bước 2 — tune tham số độ dài (``length_penalty``, ``min_new_tokens``) trên tập VALIDATION.
 
-Vấn đề (results/report.md): bản tóm tắt của ViT5 + LoRA trung bình 26.8 âm tiết, reference 39.2 —
+Vấn đề (results/main/report.md): bản tóm tắt của ViT5 + LoRA trung bình 26.8 âm tiết, reference 39.2 —
 quá ngắn làm ROUGE recall thấp. Thay vì đoán tham số, thử một lưới nhỏ trên split validation (không
 dùng test, tránh chọn tham số theo tập test) rồi chọn cấu hình có ROUGE-L cao nhất mà không làm
 tăng tỷ lệ lặp quá ``max_repetition_increase`` điểm so với baseline (tham số hiện tại).
