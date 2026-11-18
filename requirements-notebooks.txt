@@ -1,0 +1,6 @@
+# Notebook khám phá dữ liệu / phân tích lỗi (notebooks/01_eda.ipynb, notebooks/02_error_analysis.ipynb).
+# Cài thêm vào .venv chính, sau requirements.txt và `pip install -e . --no-deps` (notebook import vnsum):
+#   pip install -r requirements-notebooks.txt
+# Không cần torch hay GPU. Không pin cứng vì chỉ dùng để khám phá, không ảnh hưởng kết quả đã báo cáo.
+jupyterlab>=4
+matplotlib>=3.9
