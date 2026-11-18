@@ -1,0 +1,24 @@
+# Kiểm tra tự động trước mỗi lần commit. Cài một lần:  make hooks   (= pip install pre-commit && pre-commit install)
+# Chạy tay trên mọi file:  pre-commit run --all-files
+# Cố ý KHÔNG có hook tự sửa khoảng trắng / cuối file: tránh sửa hàng loạt file kết quả trong results/.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-merge-conflict      # chặn commit file còn dấu <<<<<<< / >>>>>>>
+      - id: check-added-large-files   # chặn lỡ commit model / checkpoint (per_sample.csv lớn nhất hiện ~6 MB)
+        args: ["--maxkb=10000"]
+      - id: check-yaml
+      - id: check-toml
+      - id: mixed-line-ending         # chặn file lẫn CRLF (xem .gitattributes)
+        args: ["--fix=no"]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.9                      # cùng bản với CI (.github/workflows/tests.yml)
+    hooks:
+      - id: ruff                      # = ruff check (chỉ lỗi thật, cấu hình trong pyproject.toml)
+
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.9.2
+    hooks:
+      - id: nbstripout                # xóa output / số thứ tự chạy của notebook trước khi commit

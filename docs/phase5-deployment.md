@@ -50,6 +50,10 @@ python -m pytest tests/test_api.py tests/test_inference.py     # trong .venv-onn
 ruff check .
 ```
 
+**Pre-commit hook** (`.pre-commit-config.yaml`): `make hooks` cài một lần; sau đó mỗi `git commit` tự chạy `ruff`,
+xóa output notebook (`nbstripout`), chặn file còn dấu conflict, file lớn hơn 10 MB và file lẫn CRLF. Chạy tay trên mọi
+file: `pre-commit run --all-files`. Xuống dòng được cố định là LF trên mọi máy bằng `.gitattributes`.
+
 `tests/test_api.py` dùng `TestClient` với `Summarizer` thật nhưng backend giả, nên không cần model.
 
 **CI** (`.github/workflows/tests.yml`) chạy trên mỗi push / pull request: `pytest` với `requirements-ci.txt` (không

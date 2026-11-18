@@ -2,10 +2,11 @@ PYTHON ?= python
 CONFIG ?= configs/data.yaml
 LIMIT  ?= 200
 
-.PHONY: help install test smoke prepare train-smoke merge eval-smoke eval api ui docker-build docker-up
+.PHONY: help install hooks test smoke prepare train-smoke merge eval-smoke eval api ui docker-build docker-up
 
 help:
 	@echo "make install  - cài dependency (requirements.txt) + package vnsum (editable)"
+	@echo "make hooks    - cài pre-commit hook (ruff, nbstripout, chặn dấu conflict) cho repo này"
 	@echo "make test     - chạy pytest"
 	@echo "make smoke    - chạy pipeline dữ liệu với $(LIMIT) mẫu (CPU), ghi vào data/processed_smoke"
 	@echo "make prepare  - chạy pipeline dữ liệu đầy đủ"
@@ -20,6 +21,10 @@ help:
 install:
 	$(PYTHON) -m pip install -r requirements.txt
 	$(PYTHON) -m pip install -e . --no-deps
+
+hooks:
+	$(PYTHON) -m pip install pre-commit==4.7.0
+	$(PYTHON) -m pre_commit install
 
 test:
 	$(PYTHON) -m pytest

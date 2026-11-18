@@ -1,0 +1,17 @@
+# Xuống dòng: lưu LF trong repo VÀ trong thư mục làm việc trên mọi máy (kể cả Windows).
+# Tránh cảnh báo "LF will be replaced by CRLF", file hiện "modified" dù nội dung không đổi, và script / Dockerfile
+# bị CRLF khi chạy trong container Linux. Ghi đè core.autocrlf của từng máy.
+* text=auto eol=lf
+
+# Nhị phân: không bao giờ đổi xuống dòng hay diff dạng văn bản.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
+*.parquet binary
+*.onnx binary
+*.bin binary
+*.safetensors binary
+*.pt binary
+*.zip binary
